@@ -1,15 +1,19 @@
-Tandaan v10
+Tandaan v13
 
-Features in this build:
-- Offline-first Todo, Shopping, and Purchases data using localStorage.
-- Create, read, update, and delete for tasks, shopping items, and purchases.
-- Task due date and optional due time.
-- Quick Add task details for due date/time.
-- Task edit modal with due date/time.
-- Calendar reminder export (.ics) with a 1-day-before VALARM.
-- In-app upcoming reminder notice when Tandaan is opened or returned to the foreground.
-- Voice capture, voice focus, and local transcription foundation from v9.
-- Automatic language handling/parser foundation.
+Updates:
+- Manual task creation now asks for a due date immediately when no date is present. Quick choices: Today, Tomorrow, Pick date & time, or No due date.
+- Due date and time use one combined picker; time is optional via Date only mode.
+- Edit Task uses the same combined due-date control, with Remove due date.
+- Enter/Return in Quick Add submits the same way as the Add button.
+- Smarter intent handling keeps future wording such as “I will buy egg 200 pesos” as a task, while “Buy egg” remains Shopping and “Egg 1 tray 400” / “I bought egg 1 tray 400” can become Purchases without saying pesos.
+- Bare numeric-only inputs are not treated as purchases.
+- Removed automatic voice-model download when the app opens. The voice model is now lazy-loaded only when the user first taps Speak, in the background while recording starts. No separate Prepare Offline Voice step or download progress UI is shown.
+- Voice recordings continue to use microphone noise suppression, echo cancellation, auto gain control, and local audio processing.
 
-Important reminder behavior:
-A PWA can store due dates locally, but it cannot reliably schedule a native iPhone alarm for a future time while the app is completely closed using only local/offline JavaScript. For a dependable lock-screen alert, this build provides a Calendar reminder file that includes a 1-day-before alarm; after the event is added to Apple Calendar, Calendar can deliver the alert independently of Tandaan. iOS Home Screen web apps support Web Push on iOS/iPadOS 16.4+, but push requires a server/device subscription and an internet path, so that is a later optional feature rather than part of the offline-only core.
+Reminder note:
+- Tandaan stores due dates locally and provides Calendar export, but a reliable lock-screen alert while the PWA is closed still requires a Web Push service. That backend is not included in this build.
+
+Update GitHub:
+  git add .
+  git commit -m "Improve task scheduling, purchase intent, and silent voice loading"
+  git push

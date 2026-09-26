@@ -26,11 +26,16 @@
     clearAll: document.getElementById('clearAll'),
     toast: document.getElementById('toast'),
     installHint: document.getElementById('installHint'),
-    voiceFocusBadge: document.getElementById('voiceFocusBadge'),
-    taskDetailsToggle: document.getElementById('taskDetailsToggle'),
-    taskDetails: document.getElementById('taskDetails'),
-    quickDueDate: document.getElementById('quickDueDate'),
-    quickDueTime: document.getElementById('quickDueTime'),
+    dueModal: document.getElementById('dueModal'),
+    dueTaskName: document.getElementById('dueTaskName'),
+    quickSetDueDateTime: document.getElementById('quickSetDueDateTime'),
+    quickNoSpecificTime: document.getElementById('quickNoSpecificTime'),
+    dueTodayButton: document.getElementById('dueTodayButton'),
+    dueTomorrowButton: document.getElementById('dueTomorrowButton'),
+    dueNoDateButton: document.getElementById('dueNoDateButton'),
+    closeDueButton: document.getElementById('closeDueButton'),
+    cancelDueButton: document.getElementById('cancelDueButton'),
+    saveDueButton: document.getElementById('saveDueButton'),
     editorModal: document.getElementById('editorModal'),
     editorTitle: document.getElementById('editorTitle'),
     editorForm: document.getElementById('editorForm'),
@@ -43,8 +48,9 @@
     editUnit: document.getElementById('editUnit'),
     editAmount: document.getElementById('editAmount'),
     editTaskFields: document.getElementById('editTaskFields'),
-    editDueDate: document.getElementById('editDueDate'),
-    editDueTime: document.getElementById('editDueTime'),
+    editDueDateTime: document.getElementById('editDueDateTime'),
+    editNoSpecificTime: document.getElementById('editNoSpecificTime'),
+    removeTaskDueButton: document.getElementById('removeTaskDueButton'),
     closeEditorButton: document.getElementById('closeEditorButton'),
     cancelEditButton: document.getElementById('cancelEditButton')
   };
@@ -212,7 +218,7 @@
 
   function isFutureTask(text) {
     var t = String(text || '').toLowerCase();
-    return /\b(?:i['’]?ll|i\s+will|i\s*am\s+going\s+to|i['’]?m\s+going\s+to|i\s+need\s+to|i\s+have\s+to|need\s+to|have\s+to|gonna|tomorrow|later|bukas|ugma)\b/i.test(t);
+    return /\b(?:i['’]?ll|i\s+will|i\s*am\s+going\s+to|i['’]?m\s+going\s+to|i\s+need\s+to|i\s+have\s+to|need\s+to|have\s+to|gonna|tomorrow|later|bukas|ugma|muhimo|buhaton|paliton\s+pa)\b/i.test(t);
   }
 
   function isPastPurchase(text) {
@@ -238,7 +244,7 @@
       s = (s.slice(0, qtyMatch.index) + ' ' + s.slice(qtyMatch.index + qtyMatch[0].length)).replace(/\s+/g, ' ').trim();
     }
     var item = cleanItemName(s);
-    if (!item) return null;
+    if (!item || !/[A-Za-zÀ-ÿ]/.test(item)) return null;
     return { item: item, quantity: Number(qty || 1), unit: unit, amount: money };
   }
 
@@ -266,7 +272,7 @@
       body = (body.slice(0, qMatch.index) + ' ' + body.slice(qMatch.index + qMatch[0].length)).replace(/\s+/g, ' ').trim();
     }
     var item = cleanItemName(body.replace(/\b(?:for|at|=)\s*$/i, ''));
-    if (!item) return null;
+    if (!item || !/[A-Za-zÀ-ÿ]/.test(item)) return null;
     return { item: item, quantity: Number(qty || 1), unit: unit, amount: extracted.amount };
   }
 
@@ -290,6 +296,136 @@
     var converted = normalizeLocalWords(text).replace(/^\s*(?:buy|to buy|need to buy|need|add to shopping list)\s*/i, '');
     var pieces = splitListItems(converted);
     return pieces.map(function (p) { return cleanItemName(p); }).filter(Boolean);
+  }
+
+
+  function isoDateFromOffset(days) {
+    var d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + Number(days || 0));
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+
+  function isoDateForWeekday(targetIndex) {
+    var d = new Date();
+    d.setHours(0, 0, 0, 0);
+    var delta = (Number(targetIndex) - d.getDay() + 7) % 7;
+    if (delta === 0) delta = 7;
+    d.setDate(d.getDate() + delta);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+
+  function parseTimeFromText(text) {
+    var s = String(text || '').toLowerCase();
+    var match = s.match(/\b(?:at|around|by)?\s*(\d{1,2})(?:[:.]([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)\b/i);
+    if (match) {
+      var h = Number(match[1]);
+      var min = Number(match[2] || 0);
+      var ap = match[3].replace(/\./g, '').toLowerCase();
+      if (h === 12) h = 0;
+      if (ap === 'pm') h += 12;
+      return { time: pad2(h) + ':' + pad2(min), phrase: match[0].trim() };
+    }
+    var wordTime = s.match(/\b(?:alas|at)\s+([a-záéíóúñ]+)(?:\s+(?:sa\s+)?(?:gab[ie]|gabi|hapon|evening|night))?\b/i);
+    if (wordTime) {
+      var raw = wordTime[1];
+      var n = wordsToNumber(raw);
+      var evening = /(?:gabi|hapon|gab[ie]|evening|night)/i.test(wordTime[0]);
+      if (raw === 'sais') n = 6;
+      if (n !== null && n >= 0 && n <= 23) {
+        var hh = Number(n);
+        if (evening && hh < 12) hh += 12;
+        return { time: pad2(hh) + ':00', phrase: wordTime[0].trim() };
+      }
+    }
+    return null;
+  }
+
+  function parseNaturalDue(text) {
+    var original = String(text || '').replace(/\s+/g, ' ').trim();
+    var lower = original.toLowerCase();
+    var dueDate = '';
+    var dueTime = '';
+    var datePhrase = '';
+    var dateMatch = null;
+
+    if (/\b(?:tomorrow|bukas|ugma)\b/i.test(original)) {
+      dueDate = isoDateFromOffset(1);
+      dateMatch = original.match(/\b(?:tomorrow|bukas|ugma)\b/i);
+      datePhrase = dateMatch ? dateMatch[0] : '';
+    } else if (/\b(?:today|karon|karong adlaw|this day)\b/i.test(original)) {
+      dueDate = isoDateFromOffset(0);
+      dateMatch = original.match(/\b(?:today|karon|karong adlaw|this day)\b/i);
+      datePhrase = dateMatch ? dateMatch[0] : '';
+    } else if (/\b(?:tonight|mamayang gabi|karong gabi[eí]|karong gab-i)\b/i.test(original)) {
+      dueDate = isoDateFromOffset(0);
+      dateMatch = original.match(/\b(?:tonight|mamayang gabi|karong gabi[eí]|karong gab-i)\b/i);
+      datePhrase = dateMatch ? dateMatch[0] : '';
+      if (!parseTimeFromText(original)) dueTime = '18:00';
+    }
+
+    var months = { january:0, february:1, march:2, april:3, may:4, june:5, july:6, august:7, september:8, october:9, november:10, december:11,
+      jan:0, feb:1, mar:2, apr:3, jun:5, jul:6, aug:7, sep:8, sept:8, oct:9, nov:10, dec:11 };
+    var explicit = lower.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(20\d{2}))?\b/i);
+    if (explicit) {
+      var year = Number(explicit[3] || new Date().getFullYear());
+      var month = months[explicit[1].toLowerCase()];
+      var day = Number(explicit[2]);
+      var candidate = new Date(year, month, day);
+      if (!isNaN(candidate.getTime())) {
+        if (!explicit[3]) {
+          var today = new Date(); today.setHours(0,0,0,0);
+          if (candidate < today) candidate.setFullYear(candidate.getFullYear() + 1);
+        }
+        dueDate = candidate.getFullYear() + '-' + pad2(candidate.getMonth()+1) + '-' + pad2(candidate.getDate());
+        dateMatch = original.match(new RegExp(explicit[0], 'i'));
+        datePhrase = dateMatch ? dateMatch[0] : explicit[0];
+      }
+    }
+
+    var numericDate = lower.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](20\d{2}))?\b/);
+    if (numericDate && !datePhrase) {
+      var y = Number(numericDate[3] || new Date().getFullYear());
+      var dt = new Date(y, Number(numericDate[1]) - 1, Number(numericDate[2]));
+      if (!numericDate[3]) {
+        var now = new Date(); now.setHours(0,0,0,0);
+        if (dt < now) dt.setFullYear(dt.getFullYear() + 1);
+      }
+      if (!isNaN(dt.getTime())) {
+        dueDate = dt.getFullYear() + '-' + pad2(dt.getMonth()+1) + '-' + pad2(dt.getDate());
+        dateMatch = original.match(new RegExp(numericDate[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
+        datePhrase = dateMatch ? dateMatch[0] : numericDate[0];
+      }
+    }
+
+    var weekdays = { sunday:0, monday:1, tuesday:2, wednesday:3, thursday:4, friday:5, saturday:6, domingo:0, lunes:1, martes:2, miyerkules:3, miércoles:3, huwebes:4, jueves:4, biyernes:5, sabado:6 };
+    var weekdayMatch = lower.match(/\b(?:next\s+|sa\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday|domingo|lunes|martes|miyerkules|miércoles|huwebes|jueves|biyernes|sabado)\b/i);
+    if (weekdayMatch && !datePhrase) {
+      dueDate = isoDateForWeekday(weekdays[weekdayMatch[1].toLowerCase()]);
+      datePhrase = weekdayMatch[0];
+    }
+
+    var time = parseTimeFromText(original);
+    if (time) dueTime = time.time;
+    if (!dueDate && time) {
+      var todayDate = new Date();
+      var candidateTime = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate(), Number(dueTime.slice(0,2)), Number(dueTime.slice(3,5)), 0, 0);
+      if (candidateTime.getTime() <= Date.now()) dueDate = isoDateFromOffset(1);
+      else dueDate = isoDateFromOffset(0);
+    }
+
+    if (!dueDate) return { title: original, dueDate: '', dueTime: '' };
+
+    var title = original;
+    var fragments = [];
+    if (datePhrase) fragments.push(datePhrase);
+    if (time) fragments.push(time.phrase);
+    fragments.forEach(function (fragment) {
+      if (!fragment) return;
+      title = title.replace(new RegExp('(?:\\b(?:due|by|on)\\s+)?' + fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), ' ');
+    });
+    title = title.replace(/\b(?:due|by|on|at)\s*$/i, '').replace(/\s{2,}/g, ' ').replace(/[,:;\-]+\s*$/, '').trim();
+    return { title: title || original, dueDate: dueDate, dueTime: dueTime };
   }
 
   function parseAndAdd(input) {
@@ -346,8 +482,34 @@
     addTask(text);
   }
 
-  function buildTaskFromQuickAdd(title) {
-    return { id: uid(), title: title, done: false, createdAt: new Date().toISOString(), updatedAt: '', dueDate: els.quickDueDate ? els.quickDueDate.value : '', dueTime: els.quickDueTime ? els.quickDueTime.value : '' };
+  function buildTask(title, dueDate, dueTime) {
+    return { id: uid(), title: title, done: false, createdAt: new Date().toISOString(), updatedAt: '', dueDate: dueDate || '', dueTime: dueTime || '' };
+  }
+
+  function dateTimeLocalValue(task) {
+    if (!task || !task.dueDate) return '';
+    return task.dueDate + 'T' + (task.dueTime || '00:00');
+  }
+
+  function scheduleFromDateTimeInput(value, dateOnly) {
+    var raw = String(value || '').trim();
+    if (!raw) return { dueDate: '', dueTime: '' };
+    var parts = raw.split('T');
+    var dueDate = parts[0] || '';
+    var dueTime = (!dateOnly && parts[1]) ? parts[1].slice(0, 5) : '';
+    return { dueDate: dueDate, dueTime: dueTime };
+  }
+
+  function addTask(title, schedule, options) {
+    var parsed = schedule || parseNaturalDue(title);
+    options = options || {};
+    if (!options.skipPrompt && !parsed.dueDate) {
+      openNewTaskDuePrompt(parsed.title);
+      return;
+    }
+    data.tasks.unshift(buildTask(parsed.title, parsed.dueDate, parsed.dueTime));
+    saveData(); render(); toast(parsed.dueDate ? (parsed.dueTime ? 'Task added with due date and time' : 'Task added with due date') : 'Task added');
+    els.quickInput.value = '';
   }
 
   function formatDue(task) {
@@ -367,14 +529,6 @@
   function isOverdue(task) {
     var ts = taskDueTimestamp(task);
     return !!ts && !task.done && ts < Date.now();
-  }
-
-  function addTask(title) {
-    data.tasks.unshift(buildTaskFromQuickAdd(title));
-    saveData(); render(); toast('Task added');
-    els.quickInput.value = '';
-    if (els.quickDueDate) els.quickDueDate.value = '';
-    if (els.quickDueTime) els.quickDueTime.value = '';
   }
 
   function addShopping(item) {
@@ -405,7 +559,7 @@
       return '<li class="list-item ' + (t.done ? 'item-done' : '') + '" data-id="' + escapeHTML(t.id) + '">' +
         '<input class="checkbox" type="checkbox" ' + (t.done ? 'checked' : '') + ' aria-label="Complete task">' +
         '<div class="item-main"><div class="item-title">' + escapeHTML(t.title) + '</div>' + (due ? '<div class="item-due ' + (overdue ? 'item-overdue' : '') + '">' + escapeHTML(due) + '</div>' : '') + '</div>' +
-        '<div class="item-actions">' + (t.dueDate ? '<button class="calendar-btn" type="button" aria-label="Create calendar reminder" title="Create Calendar reminder">📅</button>' : '') +
+        '<div class="item-actions">' + (t.dueDate ? '<button class="calendar-btn" type="button" aria-label="Create calendar reminder" title="Create Calendar reminder">📅</button>' : '<button class="set-due-btn" type="button" aria-label="Set task due date" title="Set due date">＋📅</button>') +
         '<button class="edit-btn" type="button" aria-label="Edit task" title="Edit">✎</button>' +
         '<button class="delete-btn" type="button" aria-label="Delete task" title="Delete">✕</button></div>' +
       '</li>';
@@ -452,7 +606,7 @@
     els.editPurchaseFields.hidden = type !== 'purchase';
     els.editTaskFields.hidden = type !== 'task';
     if (type === 'purchase') { els.editQuantity.value = item.quantity || 1; els.editUnit.value = item.unit || ''; els.editAmount.value = item.amount || 0; }
-    if (type === 'task') { els.editDueDate.value = item.dueDate || ''; els.editDueTime.value = item.dueTime || ''; }
+    if (type === 'task') { els.editDueDateTime.value = dateTimeLocalValue(item); els.editNoSpecificTime.checked = !!item.dueDate && !item.dueTime; }
     els.editorModal.hidden = false; els.editorModal.setAttribute('aria-hidden', 'false');
     setTimeout(function () { els.editTitle.focus(); }, 0);
   }
@@ -468,7 +622,8 @@
     if (type === 'task') {
       var title = els.editTitle.value.trim();
       if (!title) { toast('Task title is required'); return; }
-      arr[index].title = title; arr[index].dueDate = els.editDueDate.value || ''; arr[index].dueTime = els.editDueTime.value || '';
+      var schedule = scheduleFromDateTimeInput(els.editDueDateTime.value, els.editNoSpecificTime.checked);
+      arr[index].title = title; arr[index].dueDate = schedule.dueDate; arr[index].dueTime = schedule.dueTime;
     } else if (type === 'shopping') {
       var item = els.editTitle.value.trim();
       if (!item) { toast('Shopping item is required'); return; }
@@ -531,6 +686,7 @@
     if (event.target.classList.contains('edit-btn')) openEditor('task', data.tasks[index]);
     if (event.target.classList.contains('delete-btn')) deleteWithConfirm(data.tasks, id, 'task');
     if (event.target.classList.contains('calendar-btn')) createCalendarReminder(data.tasks[index]);
+    if (event.target.classList.contains('set-due-btn')) openDueModal(data.tasks[index]);
   });
   els.shoppingList.addEventListener('click', function (event) {
     var li = event.target.closest('.list-item'); if (!li) return; var id = li.getAttribute('data-id'); var index = findIndexById(data.shopping, id); if (index < 0) return;
@@ -542,18 +698,17 @@
     if (event.target.classList.contains('edit-btn')) openEditor('purchase', data.purchases[index]);
     if (event.target.classList.contains('delete-btn')) deleteWithConfirm(data.purchases, id, 'purchase');
   });
-
-  if (els.taskDetailsToggle) {
-    els.taskDetailsToggle.addEventListener('click', function () {
-      var opening = els.taskDetails.hidden; els.taskDetails.hidden = !opening; els.taskDetailsToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
-      els.taskDetailsToggle.textContent = opening ? '− Hide task due date & time' : '＋ Task due date & time (optional)';
-    });
-  }
   els.editorForm.addEventListener('submit', function (event) { event.preventDefault(); saveEditor(); });
   els.closeEditorButton.addEventListener('click', closeEditor);
   els.cancelEditButton.addEventListener('click', closeEditor);
   els.editorModal.addEventListener('click', function (event) { if (event.target.getAttribute('data-close-editor') === 'true') closeEditor(); });
-  document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && !els.editorModal.hidden) closeEditor(); });
+  els.removeTaskDueButton.addEventListener('click', function () {
+    if (els.editType.value !== 'task') return;
+    els.editDueDateTime.value = '';
+    els.editNoSpecificTime.checked = false;
+    toast('Due date removed');
+  });
+  document.addEventListener('keydown', function (event) { if (event.key !== 'Escape') return; if (!els.editorModal.hidden) closeEditor(); if (!els.dueModal.hidden) closeDueModal(); });
 
   document.querySelectorAll('.example').forEach(function (button) {
     button.addEventListener('click', function () {
@@ -573,6 +728,103 @@
     }
   }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { render(); checkLocalReminders(); } });
+
+
+  var dueTaskId = '';
+  var pendingNewTaskTitle = '';
+
+  function openNewTaskDuePrompt(title) {
+    dueTaskId = '';
+    pendingNewTaskTitle = title;
+    els.dueModal.hidden = false;
+    els.dueModal.setAttribute('aria-hidden', 'false');
+    els.dueTaskName.textContent = title;
+    els.quickSetDueDateTime.value = '';
+    els.quickNoSpecificTime.checked = true;
+    els.dueModal.querySelector('#dueModalTitle').textContent = 'When is this due?';
+  }
+
+  function openDueModal(task) {
+    dueTaskId = task.id;
+    pendingNewTaskTitle = '';
+    els.dueTaskName.textContent = task.title;
+    els.quickSetDueDateTime.value = dateTimeLocalValue(task);
+    els.quickNoSpecificTime.checked = !!task.dueDate && !task.dueTime;
+    els.dueModal.querySelector('#dueModalTitle').textContent = 'Set due date';
+    els.dueModal.hidden = false;
+    els.dueModal.setAttribute('aria-hidden', 'false');
+    setTimeout(function () { if (els.quickSetDueDateTime) els.quickSetDueDateTime.focus(); }, 0);
+  }
+
+  function closeDueModal() {
+    els.dueModal.hidden = true;
+    els.dueModal.setAttribute('aria-hidden', 'true');
+    dueTaskId = '';
+    pendingNewTaskTitle = '';
+  }
+
+  function finishNewTask(schedule) {
+    var title = pendingNewTaskTitle;
+    if (!title) return;
+    pendingNewTaskTitle = '';
+    dueTaskId = '';
+    data.tasks.unshift(buildTask(title, schedule.dueDate, schedule.dueTime));
+    saveData(); render(); els.quickInput.value = '';
+    toast(schedule.dueDate ? (schedule.dueTime ? 'Task added with due date and time' : 'Task added with due date') : 'Task added');
+    closeDueModal();
+  }
+
+  function saveQuickDue() {
+    var schedule = scheduleFromDateTimeInput(els.quickSetDueDateTime.value, els.quickNoSpecificTime.checked);
+    if (!schedule.dueDate) { toast('Choose a date, or use No due date'); return; }
+
+    if (pendingNewTaskTitle) {
+      finishNewTask(schedule);
+      return;
+    }
+
+    var index = findIndexById(data.tasks, dueTaskId);
+    if (index < 0) return;
+    data.tasks[index].dueDate = schedule.dueDate;
+    data.tasks[index].dueTime = schedule.dueTime;
+    data.tasks[index].updatedAt = new Date().toISOString();
+    saveData(); render(); closeDueModal(); toast(schedule.dueTime ? 'Due date and time saved' : 'Due date saved');
+  }
+
+  function saveNoDueDate() {
+    if (pendingNewTaskTitle) {
+      finishNewTask({ dueDate: '', dueTime: '' });
+      return;
+    }
+    var index = findIndexById(data.tasks, dueTaskId);
+    if (index < 0) return;
+    data.tasks[index].dueDate = '';
+    data.tasks[index].dueTime = '';
+    data.tasks[index].updatedAt = new Date().toISOString();
+    saveData(); render(); closeDueModal(); toast('Due date removed');
+  }
+
+  function quickSetDue(days) {
+    if (pendingNewTaskTitle) {
+      var d = isoDateFromOffset(days);
+      finishNewTask({ dueDate: d, dueTime: '' });
+      return;
+    }
+    var index = findIndexById(data.tasks, dueTaskId);
+    if (index < 0) return;
+    data.tasks[index].dueDate = isoDateFromOffset(days);
+    data.tasks[index].dueTime = '';
+    data.tasks[index].updatedAt = new Date().toISOString();
+    saveData(); render(); closeDueModal(); toast(days === 0 ? 'Due today' : 'Due tomorrow');
+  }
+
+  els.closeDueButton.addEventListener('click', closeDueModal);
+  els.cancelDueButton.addEventListener('click', closeDueModal);
+  els.saveDueButton.addEventListener('click', saveQuickDue);
+  els.dueTodayButton.addEventListener('click', function () { quickSetDue(0); });
+  els.dueTomorrowButton.addEventListener('click', function () { quickSetDue(1); });
+  els.dueNoDateButton.addEventListener('click', saveNoDueDate);
+  els.dueModal.addEventListener('click', function (event) { if (event.target.getAttribute('data-close-due') === 'true') closeDueModal(); });
 
   els.clearAll.addEventListener('click', function () {
     if (!window.confirm('Clear all local data on this device?')) return;
@@ -737,7 +989,7 @@
       return null;
     }
     try {
-      localWorker = new Worker('./voice-worker.js?v=3', { type: 'module' });
+      localWorker = new Worker('./voice-worker.js?v=5', { type: 'module' });
       localWorker.onmessage = function (event) {
         var msg = event.data || {};
         if (msg.type === 'progress') {
@@ -769,7 +1021,7 @@
         } else if (msg.type === 'error') {
           workerLoading = false;
           pendingTranscription = !!pendingAudioBlob;
-          setModelStatus('Voice is not ready yet. Connect to the internet once to finish voice setup.', false);
+          setModelStatus('', false);
           setVoiceStatus(pendingAudioBlob ? 'Recording saved. Voice processing will continue when available.' : 'Voice processing is unavailable right now. Try again while online.', false);
         }
       };
@@ -856,7 +1108,7 @@
       pendingAudioBlob = blob;
       pendingTranscription = true;
       prepareOfflineVoice();
-      setVoiceStatus('Voice is still preparing. I will transcribe this recording automatically when it is ready.', false);
+      setVoiceStatus('Recording saved. Processing your speech locally…', false);
       return;
     }
     var worker = initLocalWorker();
@@ -909,6 +1161,9 @@
         stopCaptureResources();
         transcribeBlob(blob);
       };
+      // Kick off the local speech model silently on the first recording. The user does not need
+      // to press a separate preparation button, and no download progress is shown.
+      prepareOfflineVoice();
       mediaRecorder.start(250);
       recordingStartedAt = Date.now();
       els.recordingPanel.hidden = false;
@@ -959,14 +1214,11 @@
     els.quickInput.value = '';
     setVoiceStatus('Ready.', false);
   });
-  setVoiceStatus('Tap Speak and talk naturally. Voice setup continues in the background.', false);
-  updateVoiceFocusBadge();
+  setVoiceStatus('Tap Speak and talk naturally.', false);
 
-  // Start the multilingual voice engine automatically. It can load from the
-  // browser cache offline after the first successful setup; if it is not cached
-  // yet, the normal app remains usable while the online setup continues.
-  window.setTimeout(prepareOfflineVoice, 250);
-  window.addEventListener('online', prepareOfflineVoice);
+  // Voice is lazy-loaded. Tandaan does NOT download the speech model just by opening the app.
+  // The first tap of Speak starts the model load in the background while recording begins.
+  // Subsequent uses can reuse the browser cache.
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
