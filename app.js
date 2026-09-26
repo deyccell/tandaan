@@ -7,6 +7,8 @@
   var recognition = null;
   var isListening = false;
   var voiceMode = 'fallback';
+  var voiceProcessing = null;
+  var voiceFeatures = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, webAudioFocus: false };
 
   var els = {
     quickInput: document.getElementById('quickInput'),
@@ -24,7 +26,8 @@
     emptyPurchases: document.getElementById('emptyPurchases'),
     clearAll: document.getElementById('clearAll'),
     toast: document.getElementById('toast'),
-    installHint: document.getElementById('installHint')
+    installHint: document.getElementById('installHint'),
+    voiceFocusBadge: document.getElementById('voiceFocusBadge')
   };
 
   function defaultData() {
@@ -401,7 +404,7 @@
     var total = Math.max(0, Math.floor(ms / 1000));
     var minutes = Math.floor(total / 60);
     var seconds = total % 60;
-    return minutes + ':' + String(seconds).padStart ? String(seconds).padStart(2, '0') : (seconds < 10 ? '0' + seconds : String(seconds));
+    return minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
   }
 
   // Safari's Web Speech Recognition is kept for normal Safari mode where it is available.
@@ -453,6 +456,109 @@
     };
 
     return r;
+  }
+
+  function updateVoiceFocusBadge() {
+    if (!els.voiceFocusBadge) return;
+    var active = [];
+    if (voiceFeatures.noiseSuppression) active.push('noise reduction');
+    if (voiceFeatures.autoGainControl) active.push('level control');
+    if (voiceFeatures.echoCancellation) active.push('echo control');
+    if (voiceFeatures.webAudioFocus) active.push('voice EQ/compression');
+    if (!active.length) {
+      els.voiceFocusBadge.textContent = 'Voice Focus: basic microphone';
+      els.voiceFocusBadge.classList.remove('active');
+      return;
+    }
+    els.voiceFocusBadge.textContent = 'Voice Focus: ' + active.join(' + ');
+    els.voiceFocusBadge.classList.add('active');
+  }
+
+  function getAudioSupport() {
+    var supported = {};
+    try {
+      supported = navigator.mediaDevices && navigator.mediaDevices.getSupportedConstraints
+        ? navigator.mediaDevices.getSupportedConstraints()
+        : {};
+    } catch (e) {}
+    return supported || {};
+  }
+
+  function buildAudioConstraints() {
+    var supported = getAudioSupport();
+    var audio = {};
+    // These are preferences, not exact requirements, so unsupported devices can still record.
+    if (supported.echoCancellation !== false) audio.echoCancellation = true;
+    if (supported.noiseSuppression !== false) audio.noiseSuppression = true;
+    if (supported.autoGainControl !== false) audio.autoGainControl = true;
+    if (supported.channelCount) audio.channelCount = { ideal: 1 };
+    return audio;
+  }
+
+  function rememberTrackSettings(stream) {
+    voiceFeatures.echoCancellation = false;
+    voiceFeatures.noiseSuppression = false;
+    voiceFeatures.autoGainControl = false;
+    try {
+      var track = stream.getAudioTracks()[0];
+      var settings = track && track.getSettings ? track.getSettings() : {};
+      voiceFeatures.echoCancellation = settings.echoCancellation === true;
+      voiceFeatures.noiseSuppression = settings.noiseSuppression === true;
+      voiceFeatures.autoGainControl = settings.autoGainControl === true;
+    } catch (e) {}
+    updateVoiceFocusBadge();
+  }
+
+  function stopVoiceProcessing() {
+    if (!voiceProcessing) return;
+    try { voiceProcessing.context.close(); } catch (e) {}
+    voiceProcessing = null;
+    voiceFeatures.webAudioFocus = false;
+    updateVoiceFocusBadge();
+  }
+
+  function createVoiceFocusedStream(sourceStream) {
+    var AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx || !sourceStream || !sourceStream.getAudioTracks().length) return sourceStream;
+    try {
+      var context = new AudioCtx();
+      var source = context.createMediaStreamSource(sourceStream);
+      // Remove very low rumble and extreme high-frequency hiss while keeping the speech band.
+      var highPass = context.createBiquadFilter();
+      highPass.type = 'highpass';
+      highPass.frequency.value = 90;
+      highPass.Q.value = 0.7;
+
+      var lowPass = context.createBiquadFilter();
+      lowPass.type = 'lowpass';
+      lowPass.frequency.value = 10500;
+      lowPass.Q.value = 0.7;
+
+      var compressor = context.createDynamicsCompressor();
+      compressor.threshold.value = -22;
+      compressor.knee.value = 18;
+      compressor.ratio.value = 3;
+      compressor.attack.value = 0.006;
+      compressor.release.value = 0.18;
+
+      var destination = context.createMediaStreamDestination();
+      source.connect(highPass);
+      highPass.connect(lowPass);
+      lowPass.connect(compressor);
+      compressor.connect(destination);
+
+      if (context.state === 'suspended' && context.resume) {
+        context.resume().catch(function () {});
+      }
+
+      voiceProcessing = { context: context, destination: destination };
+      voiceFeatures.webAudioFocus = true;
+      updateVoiceFocusBadge();
+      return destination.stream;
+    } catch (e) {
+      stopVoiceProcessing();
+      return sourceStream;
+    }
   }
 
   function chooseRecorderMimeType() {
@@ -513,6 +619,7 @@
     if (recordingTimer) window.clearInterval(recordingTimer);
     recordingTimer = null;
     stopLevelMeter();
+    stopVoiceProcessing();
     if (mediaStream) mediaStream.getTracks().forEach(function (track) { track.stop(); });
     mediaStream = null;
     els.recordingPanel.hidden = true;
@@ -530,15 +637,17 @@
       return;
     }
 
-    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+    navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints() })
       .then(function (stream) {
         mediaStream = stream;
+        rememberTrackSettings(stream);
+        var recordingStream = createVoiceFocusedStream(stream);
         audioChunks = [];
         var mimeType = chooseRecorderMimeType();
         try {
-          mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType: mimeType }) : new MediaRecorder(stream);
+          mediaRecorder = mimeType ? new MediaRecorder(recordingStream, { mimeType: mimeType }) : new MediaRecorder(recordingStream);
         } catch (e) {
-          mediaRecorder = new MediaRecorder(stream);
+          mediaRecorder = new MediaRecorder(recordingStream);
         }
         mediaRecorder.ondataavailable = function (event) {
           if (event.data && event.data.size) audioChunks.push(event.data);
@@ -568,7 +677,7 @@
         els.recordingTimer.textContent = '0:00';
         els.voiceButton.classList.add('listening');
         els.voiceButton.setAttribute('aria-pressed', 'true');
-        setVoiceStatus('Recording on this device. Talk, then tap Stop recording.', true);
+        setVoiceStatus('Voice Focus is active when supported. Talk, then tap Stop recording.', true);
         startLevelMeter(stream);
         recordingTimer = window.setInterval(updateRecordingTimer, 250);
       })
@@ -624,6 +733,7 @@
   });
 
   recognition = setupRecognition();
+  updateVoiceFocusBadge();
   if (!recognition) setVoiceStatus('Tap Speak to test the microphone.', false);
 
   function toast(message) {

@@ -41,3 +41,12 @@ Build 6: removed all visible manual language-selection UI and strengthened servi
 Tandaan v6
 
 This version adds a Home Screen microphone capture test using the device microphone and MediaRecorder. The recording stays local in the browser and can be previewed. Speech-to-text is intentionally not claimed yet; the next phase can add an offline multilingual transcription engine after microphone capture is verified on the iPhone XS Max and iPhone 12.
+
+
+Tandaan v7 - Voice Focus
+- Requests microphone noise suppression, automatic gain control and echo cancellation as non-required preferences when supported by the browser/device.
+- Adds local Web Audio high-pass/low-pass filtering and gentle dynamics compression before recording.
+- Shows which voice-focus layers were actually enabled on the device.
+- Keeps the original microphone stream as a fallback if Web Audio processing cannot be constructed.
+
+Note: these layers improve noise/level handling but are not the same as a dedicated AI voice-isolation model. A later offline ML denoiser can provide stronger separation from speech-like background sounds.
