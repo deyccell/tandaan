@@ -388,15 +388,13 @@
     r.continuous = false;
     r.interimResults = true;
     r.maxAlternatives = 3;
-    // No manual language is selected. The browser gets its default locale;
-    // Tandaan classifies the returned transcript afterward.
 
     r.onstart = function () {
       isListening = true;
       voiceMode = 'browser';
       els.voiceButton.classList.add('listening');
       els.voiceButton.setAttribute('aria-pressed', 'true');
-      setVoiceStatus('Listening… speak naturally. Language detection is automatic.', true);
+      setVoiceStatus('Listening… speak naturally.', true);
     };
 
     r.onresult = function (event) {
@@ -406,7 +404,7 @@
       }
       els.quickInput.value = transcript;
       if (event.results[event.results.length - 1].isFinal) {
-        setVoiceStatus('Heard: ' + transcript + ' • Detected: ' + detectLanguage(transcript), false);
+        setVoiceStatus('Heard: ' + transcript, false);
         parseAndAdd(transcript);
       } else {
         setVoiceStatus('Hearing: ' + transcript, true);
@@ -417,7 +415,7 @@
       resetVoiceButton();
       if (event.error === 'service-not-allowed') {
         voiceMode = 'fallback';
-        setVoiceStatus('Safari voice service is unavailable here. Tap the text box and use the iPhone keyboard microphone; Tandaan will still detect the language automatically.', false);
+        setVoiceStatus('Use the iPhone keyboard microphone to speak.', false);
         els.quickInput.focus();
         return;
       }
@@ -447,14 +445,14 @@
       // Give the user the most reliable path on the same screen.
       voiceMode = 'fallback';
       els.quickInput.focus();
-      setVoiceStatus('For Home Screen mode, use the iPhone keyboard microphone. Speak normally; Tandaan will detect the language automatically.', false);
+      setVoiceStatus('Use the iPhone keyboard microphone to speak.', false);
       toast('Use the iPhone keyboard microphone');
       return;
     }
 
     if (!recognition) {
       els.quickInput.focus();
-      setVoiceStatus('Use the iPhone keyboard microphone to dictate. Tandaan will detect the language automatically.', false);
+      setVoiceStatus('Use the iPhone keyboard microphone to dictate.', false);
       toast('Use the iPhone keyboard microphone');
       return;
     }
@@ -477,7 +475,7 @@
 
   recognition = setupRecognition();
   if (!recognition && !isStandalone()) {
-    setVoiceStatus('Use the iPhone keyboard microphone to dictate. Tandaan will detect the language automatically.', false);
+    setVoiceStatus('Use the iPhone keyboard microphone to dictate.', false);
   }
 
   if ('serviceWorker' in navigator) {

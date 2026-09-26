@@ -33,3 +33,6 @@ Tandaan v4 changes
 
 
 Voice UI: no manual language selector. Tandaan uses automatic language detection after transcription.
+
+
+Build 6: removed all visible manual language-selection UI and strengthened service-worker refresh behavior so updated HTML is fetched when online. Language classification remains internal.

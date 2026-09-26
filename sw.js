@@ -1,9 +1,9 @@
-const CACHE = 'tandaan-v5';
+const CACHE = 'tandaan-v6';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css',
-  './app.js',
+  './styles.css?v=6',
+  './app.js?v=6',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -25,8 +25,28 @@ self.addEventListener('activate', function (event) {
   );
 });
 
+function isNavigation(request) {
+  return request.mode === 'navigate' || (request.headers.get('accept') || '').indexOf('text/html') >= 0;
+}
+
 self.addEventListener('fetch', function (event) {
   if (event.request.method !== 'GET') return;
+
+  if (isNavigation(event.request)) {
+    event.respondWith(
+      fetch(event.request).then(function (response) {
+        if (response && response.ok) {
+          var copy = response.clone();
+          caches.open(CACHE).then(function (cache) { cache.put('./index.html', copy); });
+        }
+        return response;
+      }).catch(function () {
+        return caches.match('./index.html');
+      })
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then(function (cached) {
       return cached || fetch(event.request).then(function (response) {
@@ -34,8 +54,6 @@ self.addEventListener('fetch', function (event) {
         var copy = response.clone();
         caches.open(CACHE).then(function (cache) { cache.put(event.request, copy); });
         return response;
-      }).catch(function () {
-        return caches.match('./index.html');
       });
     })
   );
