@@ -36,3 +36,8 @@ Voice UI: no manual language selector. Tandaan uses automatic language detection
 
 
 Build 6: removed all visible manual language-selection UI and strengthened service-worker refresh behavior so updated HTML is fetched when online. Language classification remains internal.
+
+
+Tandaan v6
+
+This version adds a Home Screen microphone capture test using the device microphone and MediaRecorder. The recording stays local in the browser and can be previewed. Speech-to-text is intentionally not claimed yet; the next phase can add an offline multilingual transcription engine after microphone capture is verified on the iPhone XS Max and iPhone 12.

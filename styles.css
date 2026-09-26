@@ -95,3 +95,20 @@ input:focus { border-color: var(--accent); }
 @media (max-width: 480px) {
   .voice-row { flex-direction: column; }
   }
+
+
+.recording-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+.recording-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.recording-head span:last-child { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted); }
+.recording-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 5px rgba(251,113,133,.12); animation: pulse 1s infinite; }
+.level-track { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 12px 0; }
+.level-bar { height: 100%; width: 0%; background: var(--accent); transition: width .08s linear; }
+.stop-btn { width: 100%; min-height: 42px; border: 1px solid var(--line); border-radius: 11px; background: transparent; color: var(--text); font-weight: 700; }
+.voice-preview { width: 100%; margin-top: 10px; }
+@keyframes pulse { 0%,100% { opacity:.45; } 50% { opacity:1; } }

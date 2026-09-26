@@ -49,6 +49,18 @@
         </button>
       </div>
       <p id="voiceStatus" class="voice-status">Tap Speak and talk naturally.</p>
+      <div id="recordingPanel" class="recording-panel" hidden>
+        <div class="recording-head">
+          <span class="recording-dot" aria-hidden="true"></span>
+          <span id="recordingLabel">Recording</span>
+          <span id="recordingTimer">0:00</span>
+        </div>
+        <div class="level-track" aria-label="Microphone level">
+          <div id="levelBar" class="level-bar"></div>
+        </div>
+        <button id="stopVoiceButton" class="stop-btn" type="button">Stop recording</button>
+      </div>
+      <audio id="voicePreview" class="voice-preview" controls hidden></audio>
     </section>
 
     <section class="card">
@@ -92,6 +104,6 @@
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

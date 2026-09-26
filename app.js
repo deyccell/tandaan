@@ -364,6 +364,23 @@
     toast('In Safari: Share → Add to Home Screen');
   });
 
+  var mediaStream = null;
+  var mediaRecorder = null;
+  var audioChunks = [];
+  var levelContext = null;
+  var analyser = null;
+  var levelFrame = null;
+  var recordingStartedAt = 0;
+  var recordingTimer = null;
+  var lastAudioUrl = '';
+
+  els.recordingPanel = document.getElementById('recordingPanel');
+  els.stopVoiceButton = document.getElementById('stopVoiceButton');
+  els.recordingLabel = document.getElementById('recordingLabel');
+  els.recordingTimer = document.getElementById('recordingTimer');
+  els.levelBar = document.getElementById('levelBar');
+  els.voicePreview = document.getElementById('voicePreview');
+
   function setVoiceStatus(message, active) {
     if (!els.voiceStatus) return;
     els.voiceStatus.textContent = message;
@@ -380,6 +397,14 @@
     els.voiceButton.setAttribute('aria-pressed', 'false');
   }
 
+  function formatTime(ms) {
+    var total = Math.max(0, Math.floor(ms / 1000));
+    var minutes = Math.floor(total / 60);
+    var seconds = total % 60;
+    return minutes + ':' + String(seconds).padStart ? String(seconds).padStart(2, '0') : (seconds < 10 ? '0' + seconds : String(seconds));
+  }
+
+  // Safari's Web Speech Recognition is kept for normal Safari mode where it is available.
   function setupRecognition() {
     var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return null;
@@ -399,9 +424,7 @@
 
     r.onresult = function (event) {
       var transcript = '';
-      for (var i = event.resultIndex; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript;
-      }
+      for (var i = event.resultIndex; i < event.results.length; i++) transcript += event.results[i][0].transcript;
       els.quickInput.value = transcript;
       if (event.results[event.results.length - 1].isFinal) {
         setVoiceStatus('Heard: ' + transcript, false);
@@ -414,9 +437,7 @@
     r.onerror = function (event) {
       resetVoiceButton();
       if (event.error === 'service-not-allowed') {
-        voiceMode = 'fallback';
-        setVoiceStatus('Use the iPhone keyboard microphone to speak.', false);
-        els.quickInput.focus();
+        setVoiceStatus('Safari voice service is unavailable here. Tandaan can still capture microphone audio in supported standalone mode.', false);
         return;
       }
       if (event.error === 'not-allowed') {
@@ -434,26 +455,163 @@
     return r;
   }
 
+  function chooseRecorderMimeType() {
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+    var types = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/aac'];
+    for (var i = 0; i < types.length; i++) if (MediaRecorder.isTypeSupported(types[i])) return types[i];
+    return '';
+  }
+
+  function stopLevelMeter() {
+    if (levelFrame) window.cancelAnimationFrame(levelFrame);
+    levelFrame = null;
+    if (levelContext) { try { levelContext.close(); } catch (e) {} }
+    levelContext = null;
+    analyser = null;
+    if (els.levelBar) els.levelBar.style.width = '0%';
+  }
+
+  function startLevelMeter(stream) {
+    if (!window.AudioContext && !window.webkitAudioContext) return;
+    try {
+      var AudioCtx = window.AudioContext || window.webkitAudioContext;
+      levelContext = new AudioCtx();
+      var source = levelContext.createMediaStreamSource(stream);
+      analyser = levelContext.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      var dataArray = new Uint8Array(analyser.fftSize);
+      function tick() {
+        if (!analyser) return;
+        analyser.getByteTimeDomainData(dataArray);
+        var sum = 0;
+        for (var i = 0; i < dataArray.length; i++) {
+          var n = (dataArray[i] - 128) / 128;
+          sum += n * n;
+        }
+        var rms = Math.sqrt(sum / dataArray.length);
+        var pct = Math.min(100, Math.max(4, Math.round(rms * 220)));
+        els.levelBar.style.width = pct + '%';
+        levelFrame = window.requestAnimationFrame(tick);
+      }
+      tick();
+    } catch (e) {
+      stopLevelMeter();
+    }
+  }
+
+  function updateRecordingTimer() {
+    var elapsed = Date.now() - recordingStartedAt;
+    var total = Math.floor(elapsed / 1000);
+    var minutes = Math.floor(total / 60);
+    var seconds = total % 60;
+    els.recordingTimer.textContent = minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+  }
+
+  function finishRecording() {
+    resetVoiceButton();
+    if (recordingTimer) window.clearInterval(recordingTimer);
+    recordingTimer = null;
+    stopLevelMeter();
+    if (mediaStream) mediaStream.getTracks().forEach(function (track) { track.stop(); });
+    mediaStream = null;
+    els.recordingPanel.hidden = true;
+  }
+
+  function startStandaloneCapture() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setVoiceStatus('This Home Screen app cannot access the microphone on this device. Open Tandaan in Safari to test microphone access.', false);
+      toast('Microphone API unavailable');
+      return;
+    }
+    if (!window.MediaRecorder) {
+      setVoiceStatus('Microphone access is available, but this browser cannot record audio yet.', false);
+      toast('Audio recording not supported');
+      return;
+    }
+
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+      .then(function (stream) {
+        mediaStream = stream;
+        audioChunks = [];
+        var mimeType = chooseRecorderMimeType();
+        try {
+          mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType: mimeType }) : new MediaRecorder(stream);
+        } catch (e) {
+          mediaRecorder = new MediaRecorder(stream);
+        }
+        mediaRecorder.ondataavailable = function (event) {
+          if (event.data && event.data.size) audioChunks.push(event.data);
+        };
+        mediaRecorder.onerror = function () {
+          finishRecording();
+          setVoiceStatus('Audio recording failed. Please try again.', false);
+        };
+        mediaRecorder.onstop = function () {
+          var type = mediaRecorder.mimeType || mimeType || 'audio/mp4';
+          var blob = new Blob(audioChunks, { type: type });
+          if (lastAudioUrl) URL.revokeObjectURL(lastAudioUrl);
+          lastAudioUrl = URL.createObjectURL(blob);
+          els.voicePreview.src = lastAudioUrl;
+          els.voicePreview.hidden = false;
+          finishRecording();
+          setVoiceStatus('Audio captured locally. Next step: offline transcription.', false);
+          toast('Microphone test complete');
+        };
+
+        mediaRecorder.start(250);
+        isListening = true;
+        voiceMode = 'capture';
+        recordingStartedAt = Date.now();
+        els.recordingPanel.hidden = false;
+        els.recordingLabel.textContent = 'Recording locally';
+        els.recordingTimer.textContent = '0:00';
+        els.voiceButton.classList.add('listening');
+        els.voiceButton.setAttribute('aria-pressed', 'true');
+        setVoiceStatus('Recording on this device. Talk, then tap Stop recording.', true);
+        startLevelMeter(stream);
+        recordingTimer = window.setInterval(updateRecordingTimer, 250);
+      })
+      .catch(function (error) {
+        resetVoiceButton();
+        var code = error && error.name ? error.name : 'unknown';
+        if (code === 'NotAllowedError' || code === 'SecurityError') {
+          setVoiceStatus('Microphone permission was denied or blocked. Open Tandaan in Safari and allow Microphone, then try again.', false);
+        } else {
+          setVoiceStatus('Could not open the microphone: ' + code + '.', false);
+        }
+      });
+  }
+
+  function stopStandaloneCapture() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+      return;
+    }
+    finishRecording();
+  }
+
+  els.stopVoiceButton.addEventListener('click', function () {
+    stopStandaloneCapture();
+  });
+
   els.voiceButton.addEventListener('click', function () {
+    if (voiceMode === 'capture' && mediaRecorder) {
+      stopStandaloneCapture();
+      return;
+    }
     if (isListening && recognition) {
       recognition.stop();
       return;
     }
 
     if (isStandalone()) {
-      // Home Screen PWA speech recognition is still not consistently available on iOS.
-      // Give the user the most reliable path on the same screen.
-      voiceMode = 'fallback';
-      els.quickInput.focus();
-      setVoiceStatus('Use the iPhone keyboard microphone to speak.', false);
-      toast('Use the iPhone keyboard microphone');
+      startStandaloneCapture();
       return;
     }
 
     if (!recognition) {
-      els.quickInput.focus();
-      setVoiceStatus('Use the iPhone keyboard microphone to dictate.', false);
-      toast('Use the iPhone keyboard microphone');
+      startStandaloneCapture();
       return;
     }
 
@@ -461,10 +619,12 @@
       recognition.start();
     } catch (e) {
       resetVoiceButton();
-      els.quickInput.focus();
-      setVoiceStatus('Voice could not start. Use the keyboard microphone instead.', false);
+      setVoiceStatus('Voice could not start. Try again.', false);
     }
   });
+
+  recognition = setupRecognition();
+  if (!recognition) setVoiceStatus('Tap Speak to test the microphone.', false);
 
   function toast(message) {
     els.toast.textContent = message;
