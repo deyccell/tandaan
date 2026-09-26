@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Tandaan">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="styles.css">
+  <title>Tandaan</title>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 64 64" role="img">
+            <path d="M10 14h7l5 26h29l7-20H23" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="28" cy="51" r="4" fill="currentColor"/>
+            <circle cx="49" cy="51" r="4" fill="currentColor"/>
+            <path d="M25 22h28" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div>
+          <div class="eyebrow">OFFLINE PERSONAL LIST</div>
+          <h1>Tandaan</h1>
+        </div>
+      </div>
+      <button id="installHint" class="ghost-btn" type="button">ⓘ</button>
+    </header>
+
+    <section class="quick-add card">
+      <div class="section-title-row">
+        <h2>Quick Add</h2>
+        <span class="offline-pill">OFFLINE</span>
+      </div>
+      <div class="input-row">
+        <input id="quickInput" type="text" autocomplete="off" placeholder="Try: Mabakal bugas">
+        <button id="addButton" class="primary-btn" type="button">Add</button>
+      </div>
+      <p class="hint">Text first. Voice will be added after the offline foundation is working.</p>
+    </section>
+
+    <section class="card">
+      <div class="section-title-row">
+        <h2>Today</h2>
+        <span id="taskCount" class="count">0</span>
+      </div>
+      <ul id="taskList" class="list"></ul>
+      <div id="emptyTasks" class="empty">No tasks yet.</div>
+    </section>
+
+    <section class="card">
+      <div class="section-title-row">
+        <h2>Shopping</h2>
+        <span id="shoppingCount" class="count">0</span>
+      </div>
+      <ul id="shoppingList" class="list"></ul>
+      <div id="emptyShopping" class="empty">No shopping items yet.</div>
+    </section>
+
+    <section class="card">
+      <div class="section-title-row">
+        <h2>Purchases</h2>
+        <strong id="purchaseTotal">₱0.00</strong>
+      </div>
+      <ul id="purchaseList" class="list"></ul>
+      <div id="emptyPurchases" class="empty">No purchases yet.</div>
+    </section>
+
+    <section class="card parser-demo">
+      <h2>Command ideas</h2>
+      <div class="examples">
+        <button type="button" class="example" data-value="Mabakal bugas">Mabakal bugas</button>
+        <button type="button" class="example" data-value="Buy eggs">Buy eggs</button>
+        <button type="button" class="example" data-value="I bought rice 2 kg for 200 pesos">I bought rice 2 kg for 200 pesos</button>
+      </div>
+    </section>
+
+    <button id="clearAll" class="danger-btn" type="button">Clear all local data</button>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
