@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Tandaan">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=10">
+  <link rel="stylesheet" href="styles.css?v=11">
   <title>Tandaan</title>
 </head>
 <body>
@@ -48,10 +48,10 @@
           <span>Speak</span>
         </button>
       </div>
-      <p id="voiceStatus" class="voice-status">Tap Prepare offline voice once, then use Speak.</p>
+      <p id="voiceStatus" class="voice-status">Tap Speak and talk naturally. Voice setup continues in the background.</p>
       <div class="voice-controls">
-        <button id="prepareVoiceButton" class="secondary-btn" type="button">Prepare offline voice</button>
-        <span id="voiceModelStatus" class="voice-model-status">Checking local voice model…</span>
+        <button id="prepareVoiceButton" class="secondary-btn" type="button" hidden>Retry voice setup</button>
+        <span id="voiceModelStatus" class="voice-model-status">Voice is preparing automatically in the background.</span>
       </div>
       <div id="voiceProgressWrap" class="voice-progress-wrap" hidden>
         <progress id="voiceProgress" class="voice-progress" max="100" value="0"></progress>
@@ -120,6 +120,6 @@
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

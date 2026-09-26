@@ -4,7 +4,7 @@ env.allowRemoteModels = true;
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 env.useWasmCache = true;
-env.cacheKey = 'tandaan-transformers-v1';
+env.cacheKey = 'tandaan-transformers-v2';
 try {
   env.backends.onnx.wasm.numThreads = 1;
   env.backends.onnx.wasm.simd = true;

@@ -136,14 +136,47 @@
   }
 
   function wordsToNumber(str) {
-    var m = String(str).trim().toLowerCase();
-    var map = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10, eleven:11, twelve:12, isa:1, usa:1, duha:2, tatlo:3, upat:4, lima:5, unom:6, pito:7, walo:8, siyam:9, napulo:10 };
-    return Object.prototype.hasOwnProperty.call(map, m) ? map[m] : Number(m);
+    var m = String(str).trim().toLowerCase().replace(/[\-]+/g, ' ');
+    var small = { zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10,
+      eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16, seventeen:17, eighteen:18, nineteen:19,
+      isa:1, usa:1, duha:2, tatlo:3, upat:4, lima:5, unom:6, pito:7, walo:8, siyam:9, napulo:10 };
+    var tens = { twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90 };
+    if (Object.prototype.hasOwnProperty.call(small, m)) return small[m];
+    if (Object.prototype.hasOwnProperty.call(tens, m)) return tens[m];
+    if (/^\d+(?:\.\d+)?$/.test(m)) return Number(m);
+    var parts = m.split(/\s+/).filter(function (part) { return part && part !== 'and' && part !== 'nga'; });
+    if (!parts.length) return null;
+    var total = 0, current = 0, seen = false;
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i];
+      if (Object.prototype.hasOwnProperty.call(small, part)) { current += small[part]; seen = true; continue; }
+      if (Object.prototype.hasOwnProperty.call(tens, part)) { current += tens[part]; seen = true; continue; }
+      if (/^\d+(?:\.\d+)?$/.test(part)) { current += Number(part); seen = true; continue; }
+      if (part === 'hundred') { current = (current || 1) * 100; seen = true; continue; }
+      if (part === 'thousand') { total += (current || 1) * 1000; current = 0; seen = true; continue; }
+      return null;
+    }
+    return seen ? total + current : null;
   }
 
   function parseAmount(str) {
     var m = String(str).match(/(?:₱\s*)?(\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)/);
-    return m ? Number(m[1].replace(/,/g, '')) : null;
+    if (m) return Number(m[1].replace(/,/g, ''));
+    return wordsToNumber(str);
+  }
+
+  function extractTrailingAmount(text) {
+    var s = String(text).trim();
+    var numeric = s.match(/(?:₱\s*)?(\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s*(?:pesos?|php)?\s*$/i);
+    if (numeric) {
+      return { amount: Number(numeric[1].replace(/,/g, '')), text: s.slice(0, numeric.index).trim() };
+    }
+    var wordMatch = s.match(/((?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|and|isa|usa|duha|tatlo|upat|lima|unom|pito|walo|siyam|napulo)(?:\s+(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|and|isa|usa|duha|tatlo|upat|lima|unom|pito|walo|siyam|napulo)){0,5})\s*(?:pesos?|php)?\s*$/i);
+    if (wordMatch) {
+      var amount = wordsToNumber(wordMatch[1]);
+      if (amount !== null) return { amount: amount, text: s.slice(0, wordMatch.index).trim() };
+    }
+    return null;
   }
 
   function splitListItems(text) {
@@ -153,26 +186,32 @@
     return normalized.split(/[;,]+/).map(function (p) { return p.trim(); }).filter(Boolean);
   }
 
+  function isFutureTask(text) {
+    var t = String(text || '').toLowerCase();
+    return /\b(?:i['’]?ll|i\s+will|i\s*am\s+going\s+to|i['’]?m\s+going\s+to|i\s+need\s+to|i\s+have\s+to|need\s+to|have\s+to|gonna|tomorrow|later|bukas|ugma)\b/i.test(t);
+  }
+
+  function isPastPurchase(text) {
+    var t = String(text || '').toLowerCase();
+    return /\b(?:i\s+)?(?:bought|purchased|paid\s+for|got)\b/i.test(t) || /\b(?:nabakal|nakabakal|nakapalit|nabili|binili|ginbakal|ginpalit|napalit)\b/i.test(t);
+  }
+
   function parseListPurchasePart(part) {
     var s = part.trim();
-    var money = null;
-    var amountMatch = s.match(/(?:₱\s*)?(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:pesos?|php)?\s*$/i);
-    if (amountMatch) {
-      money = Number(amountMatch[1].replace(/,/g, ''));
-      s = s.slice(0, amountMatch.index).trim();
-    }
-    if (money === null) return null;
+    var extracted = extractTrailingAmount(s);
+    if (!extracted) return null;
+    var money = extracted.amount;
+    s = extracted.text;
 
     var qty = 1;
     var unit = '';
-    var qtyMatch = s.match(/(?:^|\s)(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|isa|usa|duha|tatlo|upat|lima|unom|pito|walo|siyam|napulo)\s*(kg|kilo|kilos|g|gram|grams|pcs|pc|piece|pieces|l|liter|liters|ml|can|cans|bottle|bottles|ka\s+lata)?/i);
-    var digitQtyMatch = s.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(kg|kilo|kilos|g|gram|grams|pcs|pc|piece|pieces|l|liter|liters|ml|can|cans|bottle|bottles|ka\s+lata)?/i);
-    var qMatch = qtyMatch || digitQtyMatch;
-    if (qMatch) {
-      qty = wordsToNumber(qMatch[1]);
-      unit = qMatch[2] || '';
-      unit = unit.replace(/^kilos?$/i, 'kg').replace(/^grams?$/i, 'g').replace(/^pcs?$/i, 'pcs').replace(/^pieces?$/i, 'pcs').replace(/^cans?$/i, 'can').replace(/^bottles?$/i, 'bottle');
-      s = (s.slice(0, qMatch.index) + ' ' + s.slice(qMatch.index + qMatch[0].length)).replace(/\s+/g, ' ').trim();
+    var units = 'kg|kilo|kilos|g|gram|grams|pcs|pc|piece|pieces|tray|trays|dozen|dozens|dz|l|liter|liters|ml|can|cans|bottle|bottles|pack|packs|box|boxes|bag|bags|bote|ka\s+lata';
+    var qtyPattern = '(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|isa|usa|duha|tatlo|upat|lima|unom|pito|walo|siyam|napulo|\\d+(?:\\.\\d+)?)';
+    var qtyMatch = s.match(new RegExp('(?:^|\\s)(' + qtyPattern + ')\\s*(' + units + ')?\\b', 'i'));
+    if (qtyMatch) {
+      qty = wordsToNumber(qtyMatch[1]);
+      unit = normalizeUnit(qtyMatch[2] || '');
+      s = (s.slice(0, qtyMatch.index) + ' ' + s.slice(qtyMatch.index + qtyMatch[0].length)).replace(/\s+/g, ' ').trim();
     }
     var item = cleanItemName(s);
     if (!item) return null;
@@ -180,22 +219,47 @@
   }
 
   function parsePurchase(text) {
-    var converted = normalizeLocalWords(text).replace(/\s+/g, ' ').trim();
-    var explicit = converted.match(/^(?:i\s+)?(?:bought|purchased)\s+(?:ko\s+)?(.+?)\s+(\d+(?:\.\d+)?)\s*(kg|kilo|kilos|g|gram|grams|pcs|pc|piece|pieces|l|liter|liters|ml|can|cans|bottle|bottles)?\s*(?:for|at|=)?\s*₱?\s*(\d+(?:\.\d+)?)\s*(?:pesos?|php)?$/i);
-    if (explicit) {
-      return { item: cleanItemName(explicit[1]), quantity: Number(explicit[2]), unit: normalizeUnit(explicit[3] || ''), amount: Number(explicit[4]) };
-    }
+    var original = String(text || '').replace(/\s+/g, ' ').trim();
+    var converted = normalizeLocalWords(original).replace(/\s+/g, ' ').trim();
+    var extracted = extractTrailingAmount(converted);
+    if (!extracted) return null;
+    var body = extracted.text;
 
-    var convertedBuy = converted.match(/^buy\s+(.+?)\s+(\d+(?:\.\d+)?)\s*(kg|kilo|kilos|g|gram|grams|pcs|pc|piece|pieces|l|liter|liters|ml|can|cans|bottle|bottles)?\s*(?:for|at|=)?\s*₱?\s*(\d+(?:\.\d+)?)\s*(?:pesos?|php)?$/i);
-    if (convertedBuy) {
-      return { item: cleanItemName(convertedBuy[1]), quantity: Number(convertedBuy[2]), unit: normalizeUnit(convertedBuy[3] || ''), amount: Number(convertedBuy[4]) };
-    }
+    // Purchase records require past/confirmed purchase wording. This prevents
+    // future tasks like "I'll buy egg 200" from becoming purchases.
+    if (!isPastPurchase(original) && !/^bought\b/i.test(body)) return null;
 
-    return null;
+    body = body.replace(/^(?:i\s+)?(?:bought|purchased)\s+(?:ko\s+)?/i, '');
+    body = body.replace(/^(?:ko\s+|nako\s+|ak[oó]\s+)+/i, '');
+
+    var qty = 1, unit = '';
+    var units = 'kg|kilo|kilos|g|gram|grams|pcs|pc|piece|pieces|tray|trays|dozen|dozens|dz|l|liter|liters|ml|can|cans|bottle|bottles|pack|packs|box|boxes|bag|bags|bote|ka\s+lata';
+    var qtyPattern = '(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|isa|usa|duha|tatlo|upat|lima|unom|pito|walo|siyam|napulo|\\d+(?:\\.\\d+)?)';
+    var qMatch = body.match(new RegExp('(?:^|\\s)(' + qtyPattern + ')\\s*(' + units + ')?\\b', 'i'));
+    if (qMatch) {
+      qty = wordsToNumber(qMatch[1]);
+      unit = normalizeUnit(qMatch[2] || '');
+      body = (body.slice(0, qMatch.index) + ' ' + body.slice(qMatch.index + qMatch[0].length)).replace(/\s+/g, ' ').trim();
+    }
+    var item = cleanItemName(body.replace(/\b(?:for|at|=)\s*$/i, ''));
+    if (!item) return null;
+    return { item: item, quantity: Number(qty || 1), unit: unit, amount: extracted.amount };
   }
 
   function normalizeUnit(unit) {
-    return String(unit || '').toLowerCase().replace(/^kilo(?:s)?$/, 'kg').replace(/^gram(?:s)?$/, 'g').replace(/^pcs?$/, 'pcs').replace(/^pieces?$/, 'pcs').replace(/^cans?$/, 'can').replace(/^bottles?$/, 'bottle');
+    return String(unit || '').toLowerCase()
+      .replace(/^kilo(?:s)?$/, 'kg')
+      .replace(/^gram(?:s)?$/, 'g')
+      .replace(/^pcs?$/, 'pcs')
+      .replace(/^pieces?$/, 'pcs')
+      .replace(/^trays?$/, 'tray')
+      .replace(/^dozens?$/, 'dozen')
+      .replace(/^dz$/, 'dozen')
+      .replace(/^cans?$/, 'can')
+      .replace(/^bottles?$/, 'bottle')
+      .replace(/^packs?$/, 'pack')
+      .replace(/^boxes?$/, 'box')
+      .replace(/^bags?$/, 'bag');
   }
 
   function parseShoppingItems(text) {
@@ -208,11 +272,15 @@
     var text = String(input || '').trim();
     if (!text) return;
 
+    // Future intent always wins over price-shaped text.
+    // Example: "I'll buy egg 200 pesos" is a task, not a completed purchase.
+    if (isFutureTask(text)) {
+      addTask(text);
+      return;
+    }
 
-    var converted = normalizeLocalWords(text);
-    var lower = converted.toLowerCase();
-
-    // Long purchase list: "Rice 2 kg 200, eggs 12 120, sardines 3 cans 75"
+    // Long purchase list. A trailing number can be the price even when the
+    // speaker never says "pesos". Example: "egg 1 tray 400".
     if (/[;,]/.test(text)) {
       var rawParts = text.split(/[;,]+/).map(function (p) { return p.trim(); }).filter(Boolean);
       var purchases = rawParts.map(parseListPurchasePart).filter(Boolean);
@@ -230,12 +298,8 @@
       return;
     }
 
-    var loosePurchase = text.match(/^(.+?)[\s,-]+₱?\s*(\d+(?:\.\d+)?)\s*(?:pesos?|php)$/i);
-    if (loosePurchase) {
-      addPurchase({ item: cleanItemName(loosePurchase[1]), quantity: 1, unit: '', amount: Number(loosePurchase[2]) });
-      return;
-    }
-
+    var converted = normalizeLocalWords(text);
+    var lower = converted.toLowerCase();
     var shoppingTrigger = /^(?:buy|to buy|need to buy|need|add to shopping list)\b/i.test(lower);
     var localShoppingTrigger = /\b(?:mabakal|bakal|palit|paliton)\b/i.test(text);
     if (shoppingTrigger || localShoppingTrigger) {
@@ -245,6 +309,14 @@
         els.quickInput.value = '';
         return;
       }
+    }
+
+    // A price-bearing item with no shopping/purchase verb is treated as a
+    // purchase record. This supports: "egg 1 tray 400" / "rice 2 kg 200".
+    var barePurchase = parseListPurchasePart(text);
+    if (barePurchase) {
+      addPurchase(barePurchase);
+      return;
     }
 
     addTask(text);
@@ -387,6 +459,7 @@
   var localWorkerReady = false;
   var workerLoading = false;
   var pendingTranscription = false;
+  var pendingAudioBlob = null;
   var MAX_RECORDING_SECONDS = 90;
 
   els.recordingPanel = document.getElementById('recordingPanel');
@@ -524,7 +597,7 @@
       return null;
     }
     try {
-      localWorker = new Worker('./voice-worker.js?v=1', { type: 'module' });
+      localWorker = new Worker('./voice-worker.js?v=2', { type: 'module' });
       localWorker.onmessage = function (event) {
         var msg = event.data || {};
         if (msg.type === 'progress') {
@@ -540,13 +613,17 @@
         } else if (msg.type === 'ready') {
           localWorkerReady = true;
           workerLoading = false;
+          try { localStorage.setItem('tandaan-voice-ready-v1', '1'); } catch (e) {}
           if (els.voiceProgressWrap) els.voiceProgressWrap.hidden = true;
           if (els.prepareVoiceButton) {
-            els.prepareVoiceButton.textContent = 'Offline voice ready';
-            els.prepareVoiceButton.disabled = true;
+            els.prepareVoiceButton.hidden = true;
           }
-          setModelStatus('Offline voice ready. It can transcribe without Safari voice service.', true);
-          toast('Offline voice is ready');
+          setModelStatus('Voice ready on this device.', true);
+          if (pendingAudioBlob) {
+            var queuedBlob = pendingAudioBlob;
+            pendingAudioBlob = null;
+            transcribeBlob(queuedBlob);
+          }
         } else if (msg.type === 'result') {
           pendingTranscription = false;
           localWorkerReady = true;
@@ -559,19 +636,19 @@
           }
         } else if (msg.type === 'error') {
           workerLoading = false;
-          pendingTranscription = false;
-          setModelStatus('Voice model error: ' + (msg.message || 'Unknown error'), false);
-          setVoiceStatus('Local transcription failed. The recording is still available below.', false);
+          pendingTranscription = !!pendingAudioBlob;
+          setModelStatus('Voice is not ready yet. Connect to the internet once to finish voice setup.', false);
+          setVoiceStatus(pendingAudioBlob ? 'Your recording is saved in memory and will be transcribed when voice setup finishes.' : 'Voice setup is waiting for an internet connection.', false);
           if (els.prepareVoiceButton) {
-            els.prepareVoiceButton.disabled = false;
-            els.prepareVoiceButton.textContent = 'Retry offline voice setup';
+            els.prepareVoiceButton.hidden = true;
           }
         }
       };
       localWorker.onerror = function () {
         workerLoading = false;
-        setModelStatus('Voice worker could not start. Refresh and try again.', false);
-        if (els.prepareVoiceButton) els.prepareVoiceButton.disabled = false;
+        localWorker = null;
+        setModelStatus('Voice setup is not available yet. Connect to the internet once, then reopen Tandaan.', false);
+        if (els.prepareVoiceButton) els.prepareVoiceButton.hidden = true;
       };
       return localWorker;
     } catch (e) {
@@ -584,9 +661,9 @@
     if (localWorkerReady || workerLoading) return;
     var worker = initLocalWorker();
     if (!worker) return;
-    if (els.prepareVoiceButton) els.prepareVoiceButton.disabled = true;
     workerLoading = true;
-    setModelStatus('Starting offline voice setup…', true);
+    setModelStatus('Voice is preparing in the background…', true);
+    if (els.voiceProgressWrap) els.voiceProgressWrap.hidden = false;
     worker.postMessage({ type: 'load' });
   }
 
@@ -650,7 +727,10 @@
 
   function transcribeBlob(blob) {
     if (!localWorkerReady) {
-      setVoiceStatus('Prepare offline voice first. The first setup needs internet to download the model.', false);
+      pendingAudioBlob = blob;
+      pendingTranscription = true;
+      prepareOfflineVoice();
+      setVoiceStatus('Voice is still preparing. I will transcribe this recording automatically when it is ready.', false);
       return;
     }
     var worker = initLocalWorker();
@@ -730,16 +810,10 @@
     }
   }
 
-  els.prepareVoiceButton.addEventListener('click', prepareOfflineVoice);
   els.stopVoiceButton.addEventListener('click', stopRecording);
   els.voiceButton.addEventListener('click', function () {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       stopRecording();
-      return;
-    }
-    if (!localWorkerReady) {
-      prepareOfflineVoice();
-      setVoiceStatus('Preparing the offline voice model. Tap Speak again after it says “Offline voice ready.”', false);
       return;
     }
     startRecording();
@@ -761,13 +835,18 @@
   });
 
   if (els.prepareVoiceButton) {
-    els.prepareVoiceButton.textContent = 'Prepare offline voice';
-    els.prepareVoiceButton.disabled = false;
+    els.prepareVoiceButton.hidden = true;
   }
-  setModelStatus('First setup downloads a multilingual Whisper model (tens of MB). After it is cached, transcription runs on this device.', false);
+  setModelStatus('Voice is preparing automatically in the background. You can keep using Tandaan.', false);
   if (els.voiceProgressWrap) els.voiceProgressWrap.hidden = true;
-  setVoiceStatus('Tap Prepare offline voice once, then use Speak.', false);
+  setVoiceStatus('Tap Speak and talk naturally. Voice setup continues in the background.', false);
   updateVoiceFocusBadge();
+
+  // Start the multilingual voice engine automatically. It can load from the
+  // browser cache offline after the first successful setup; if it is not cached
+  // yet, the normal app remains usable while the online setup continues.
+  window.setTimeout(prepareOfflineVoice, 250);
+  window.addEventListener('online', prepareOfflineVoice);
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {

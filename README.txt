@@ -1,4 +1,4 @@
-Tandaan v8
+Tandaan v9
 
 This version adds local multilingual speech-to-text using Transformers.js + the ONNX community Whisper Tiny model.
 
@@ -20,3 +20,6 @@ Prepare model -> Speak -> Stop -> local transcription -> review transcript -> Us
 
 MAX RECORDING
 90 seconds per recording in this version.
+
+
+Tandaan v9: voice setup now begins automatically in the background. There is no user-facing Prepare button during normal operation. Price-shaped entries such as "egg 1 tray 400" are treated as purchases; explicit future tasks such as "I will buy egg 200" stay as tasks.
