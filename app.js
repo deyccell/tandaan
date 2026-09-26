@@ -614,10 +614,6 @@
   els.recordingTimer = document.getElementById('recordingTimer');
   els.levelBar = document.getElementById('levelBar');
   els.voicePreview = document.getElementById('voicePreview');
-  els.prepareVoiceButton = document.getElementById('prepareVoiceButton');
-  els.voiceModelStatus = document.getElementById('voiceModelStatus');
-  els.voiceProgress = document.getElementById('voiceProgress');
-  els.voiceProgressWrap = document.getElementById('voiceProgressWrap');
   els.transcriptCard = document.getElementById('transcriptCard');
   els.transcriptText = document.getElementById('transcriptText');
   els.useTranscriptButton = document.getElementById('useTranscriptButton');
@@ -630,9 +626,7 @@
   }
 
   function setModelStatus(message, active) {
-    if (!els.voiceModelStatus) return;
-    els.voiceModelStatus.textContent = message;
-    els.voiceModelStatus.classList.toggle('voice-active', !!active);
+    // Model preparation happens silently in the background.
   }
 
   function resetVoiceButton() {
@@ -743,27 +737,19 @@
       return null;
     }
     try {
-      localWorker = new Worker('./voice-worker.js?v=2', { type: 'module' });
+      localWorker = new Worker('./voice-worker.js?v=3', { type: 'module' });
       localWorker.onmessage = function (event) {
         var msg = event.data || {};
         if (msg.type === 'progress') {
           workerLoading = true;
-          if (els.voiceProgressWrap) els.voiceProgressWrap.hidden = false;
           var pct = Math.max(0, Math.min(100, Number(msg.progress || 0)));
-          if (els.voiceProgress) els.voiceProgress.value = pct;
           var suffix = msg.file ? ' — ' + msg.file : '';
-          setModelStatus('Preparing offline voice ' + Math.round(pct) + '%' + suffix, true);
         } else if (msg.type === 'loading') {
           workerLoading = true;
-          setModelStatus(msg.message || 'Preparing offline voice…', true);
         } else if (msg.type === 'ready') {
           localWorkerReady = true;
           workerLoading = false;
           try { localStorage.setItem('tandaan-voice-ready-v1', '1'); } catch (e) {}
-          if (els.voiceProgressWrap) els.voiceProgressWrap.hidden = true;
-          if (els.prepareVoiceButton) {
-            els.prepareVoiceButton.hidden = true;
-          }
           setModelStatus('Voice ready on this device.', true);
           if (pendingAudioBlob) {
             var queuedBlob = pendingAudioBlob;
@@ -784,21 +770,17 @@
           workerLoading = false;
           pendingTranscription = !!pendingAudioBlob;
           setModelStatus('Voice is not ready yet. Connect to the internet once to finish voice setup.', false);
-          setVoiceStatus(pendingAudioBlob ? 'Your recording is saved in memory and will be transcribed when voice setup finishes.' : 'Voice setup is waiting for an internet connection.', false);
-          if (els.prepareVoiceButton) {
-            els.prepareVoiceButton.hidden = true;
-          }
+          setVoiceStatus(pendingAudioBlob ? 'Recording saved. Voice processing will continue when available.' : 'Voice processing is unavailable right now. Try again while online.', false);
         }
       };
       localWorker.onerror = function () {
         workerLoading = false;
         localWorker = null;
-        setModelStatus('Voice setup is not available yet. Connect to the internet once, then reopen Tandaan.', false);
-        if (els.prepareVoiceButton) els.prepareVoiceButton.hidden = true;
+        setVoiceStatus('Voice processing is not available right now. Reopen Tandaan while online.', false);
       };
       return localWorker;
     } catch (e) {
-      setModelStatus('Could not start the local voice worker.', false);
+      setVoiceStatus('Voice processing could not start. Try again.', false);
       return null;
     }
   }
@@ -808,8 +790,6 @@
     var worker = initLocalWorker();
     if (!worker) return;
     workerLoading = true;
-    setModelStatus('Voice is preparing in the background…', true);
-    if (els.voiceProgressWrap) els.voiceProgressWrap.hidden = false;
     worker.postMessage({ type: 'load' });
   }
 
@@ -979,12 +959,6 @@
     els.quickInput.value = '';
     setVoiceStatus('Ready.', false);
   });
-
-  if (els.prepareVoiceButton) {
-    els.prepareVoiceButton.hidden = true;
-  }
-  setModelStatus('Voice is preparing automatically in the background. You can keep using Tandaan.', false);
-  if (els.voiceProgressWrap) els.voiceProgressWrap.hidden = true;
   setVoiceStatus('Tap Speak and talk naturally. Voice setup continues in the background.', false);
   updateVoiceFocusBadge();
 

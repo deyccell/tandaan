@@ -1,10 +1,10 @@
-const CACHE = 'tandaan-v12';
+const CACHE = 'tandaan-v14';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=12',
-  './app.js?v=12',
-  './voice-worker.js?v=2',
+  './styles.css?v=14',
+  './app.js?v=14',
+  './voice-worker.js?v=3',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
