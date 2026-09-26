@@ -13,7 +13,6 @@
     addButton: document.getElementById('addButton'),
     voiceButton: document.getElementById('voiceButton'),
     voiceStatus: document.getElementById('voiceStatus'),
-    languageBadge: document.getElementById('languageBadge'),
     taskList: document.getElementById('taskList'),
     shoppingList: document.getElementById('shoppingList'),
     purchaseList: document.getElementById('purchaseList'),
@@ -134,12 +133,6 @@
     return top;
   }
 
-  function setLanguageBadge(text) {
-    if (!els.languageBadge) return;
-    var language = detectLanguage(text);
-    els.languageBadge.textContent = 'Language: ' + language;
-  }
-
   function wordsToNumber(str) {
     var m = String(str).trim().toLowerCase();
     var map = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10, eleven:11, twelve:12, isa:1, usa:1, duha:2, tatlo:3, upat:4, lima:5, unom:6, pito:7, walo:8, siyam:9, napulo:10 };
@@ -213,7 +206,6 @@
     var text = String(input || '').trim();
     if (!text) return;
 
-    setLanguageBadge(text);
 
     var converted = normalizeLocalWords(text);
     var lower = converted.toLowerCase();
@@ -358,7 +350,6 @@
   document.querySelectorAll('.example').forEach(function (button) {
     button.addEventListener('click', function () {
       els.quickInput.value = button.getAttribute('data-value');
-      setLanguageBadge(els.quickInput.value);
       els.quickInput.focus();
     });
   });
@@ -414,9 +405,8 @@
         transcript += event.results[i][0].transcript;
       }
       els.quickInput.value = transcript;
-      setLanguageBadge(transcript);
       if (event.results[event.results.length - 1].isFinal) {
-        setVoiceStatus('Heard: ' + transcript, false);
+        setVoiceStatus('Heard: ' + transcript + ' • Detected: ' + detectLanguage(transcript), false);
         parseAndAdd(transcript);
       } else {
         setVoiceStatus('Hearing: ' + transcript, true);

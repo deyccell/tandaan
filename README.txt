@@ -30,3 +30,6 @@ Tandaan v4 changes
 - Improved shopping-list parsing for English, Tagalog-style, Hiligaynon and Cebuano/Bisaya phrases.
 - Improved long purchase-list parsing for comma/semicolon-separated items.
 - On iOS Home Screen/PWA mode, the Speak button guides the user to the iPhone keyboard microphone when Safari speech recognition is unavailable.
+
+
+Voice UI: no manual language selector. Tandaan uses automatic language detection after transcription.
