@@ -1,12 +1,18 @@
 (function () {
   'use strict';
 
-  var STORAGE_KEY = 'bugaslist-data-v1';
+  var STORAGE_KEY = 'tandaan-data-v2';
+  var LEGACY_KEY = 'bugaslist-data-v1';
   var data = loadData();
+  var recognition = null;
+  var isListening = false;
 
   var els = {
     quickInput: document.getElementById('quickInput'),
     addButton: document.getElementById('addButton'),
+    voiceButton: document.getElementById('voiceButton'),
+    voiceStatus: document.getElementById('voiceStatus'),
+    voiceLang: document.getElementById('voiceLang'),
     taskList: document.getElementById('taskList'),
     shoppingList: document.getElementById('shoppingList'),
     purchaseList: document.getElementById('purchaseList'),
@@ -22,19 +28,26 @@
   };
 
   function defaultData() {
-    return { tasks: [], shopping: [], purchases: [] };
+    return { tasks: [], shopping: [], purchases: [], notes: [] };
+  }
+
+  function normalizeData(parsed) {
+    return {
+      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+      shopping: Array.isArray(parsed.shopping) ? parsed.shopping : [],
+      purchases: Array.isArray(parsed.purchases) ? parsed.purchases : [],
+      notes: Array.isArray(parsed.notes) ? parsed.notes : []
+    };
   }
 
   function loadData() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return defaultData();
-      var parsed = JSON.parse(raw);
-      return {
-        tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
-        shopping: Array.isArray(parsed.shopping) ? parsed.shopping : [],
-        purchases: Array.isArray(parsed.purchases) ? parsed.purchases : []
-      };
+      if (!raw) {
+        raw = localStorage.getItem(LEGACY_KEY);
+        if (!raw) return defaultData();
+      }
+      return normalizeData(JSON.parse(raw));
     } catch (e) {
       return defaultData();
     }
@@ -58,40 +71,106 @@
     return '₱' + Number(value || 0).toFixed(2);
   }
 
+  function cleanItemName(value) {
+    return value
+      .replace(/^\s*(?:ko|mo|nako|ako)\s+/i, '')
+      .replace(/\s+/g, ' ')
+      .replace(/[,.]+$/, '')
+      .trim();
+  }
+
+  function normalizeLocalWords(text) {
+    return text
+      .replace(/\bmabakal\b/gi, 'buy')
+      .replace(/\mbakal\b/gi, 'buy')
+      .replace(/\bpalit(?:on)?\b/gi, 'buy')
+      .replace(/\bpaliton\b/gi, 'buy')
+      .replace(/\bnabakal\b/gi, 'bought')
+      .replace(/\bnakabakal\b/gi, 'bought')
+      .replace(/\bkag\b/gi, 'and')
+      .replace(/\bnga\b/gi, 'that')
+      .replace(/\bsang\b/gi, 'of')
+      .replace(/\bbugas\b/gi, 'rice')
+      .replace(/\bhumay\b/gi, 'rice')
+      .replace(/\bitlog\b/gi, 'eggs')
+      .replace(/\bkatong itlog\b/gi, 'eggs')
+      .replace(/\blata\b/gi, 'cans')
+      .replace(/\bka lata\b/gi, 'cans')
+      .replace(/\bkilo\b/gi, 'kg')
+      .replace(/\bkilos\b/gi, 'kg')
+      .replace(/\btatlo\b/gi, '3')
+      .replace(/\bduha\b/gi, '2')
+      .replace(/\bisa\b/gi, '1')
+      .replace(/\busa\b/gi, '1');
+  }
+
+  function parseAmount(str) {
+    var m = String(str).match(/₱?\s*(\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)/);
+    return m ? Number(m[1].replace(/,/g, '')) : null;
+  }
+
   function parseAndAdd(input) {
     var text = input.trim();
     if (!text) return;
 
-    var lower = text.toLowerCase();
+    var converted = normalizeLocalWords(text);
+    var normalized = converted.toLowerCase();
 
-    // Purchase pattern for the first foundation version.
-    // Examples: "I bought rice 2 kg for 200 pesos", "rice 2kg 200"
-    var purchase = text.match(/^(?:i\s+)?(?:bought|buy|purchased|nabakal(?:\s+ko)?|nakabakal(?:\s+ko)?)[\s:,-]*(.+?)\s+(\d+(?:\.\d+)?)\s*(kg|kilos?|g|grams?|pcs?|pieces?|l|liters?|ml|cans?|bottles?)?\s*(?:for|at|=)?\s*₱?\s*(\d+(?:\.\d+)?)\s*(?:pesos?|php)?$/i);
-    if (purchase) {
-      addPurchase({
-        item: purchase[1],
-        quantity: Number(purchase[2]),
-        unit: purchase[3] || '',
-        amount: Number(purchase[4])
+    // Multiple purchases in one typed/voice sentence separated by commas or semicolons.
+    if (/[;,]/.test(text)) {
+      var parts = text.split(/[;,]+/).map(function (p) { return p.trim(); }).filter(Boolean);
+      var addedAny = false;
+      parts.forEach(function (part) {
+        var result = parsePurchase(part);
+        if (result) { addPurchase(result, true); addedAny = true; }
       });
+      if (addedAny) {
+        saveData(); render(); toast('Purchases added');
+        els.quickInput.value = '';
+        return;
+      }
+    }
+
+    var purchase = parsePurchase(text);
+    if (purchase) {
+      addPurchase(purchase);
       return;
     }
 
-    // Simple shopping phrases in English and common local wording.
-    var shopping = text.match(/^(?:mabakal|bakal|palit(?:on)?|palit(?:on)?\s+ko|buy|to buy|need to buy|need)[\s:,-]+(.+)$/i);
+    var shopping = converted.match(/^(?:buy|to buy|need to buy|need|add to shopping list)[\s:,-]+(.+)$/i);
     if (shopping) {
-      addShopping(shopping[1]);
+      addShopping(cleanItemName(shopping[1]));
       return;
     }
 
-    // Explicit purchase total style: "rice 200" / "eggs 120 pesos"
+    // Loose purchase: "rice 200 pesos", "eggs ₱120".
     var loosePurchase = text.match(/^(.+?)[\s,-]+₱?\s*(\d+(?:\.\d+)?)\s*(?:pesos?|php)$/i);
     if (loosePurchase) {
-      addPurchase({ item: loosePurchase[1], quantity: 1, unit: '', amount: Number(loosePurchase[2]) });
+      addPurchase({ item: cleanItemName(loosePurchase[1]), quantity: 1, unit: '', amount: Number(loosePurchase[2]) });
+      return;
+    }
+
+    // If local wording converted cleanly into a shopping command, use it.
+    var localShopping = normalized.match(/^(?:buy)[\s:,-]+(.+)$/i);
+    if (localShopping) {
+      addShopping(cleanItemName(localShopping[1]));
       return;
     }
 
     addTask(text);
+  }
+
+  function parsePurchase(text) {
+    var converted = normalizeLocalWords(text);
+    var purchase = converted.match(/^(?:i\s+)?(?:bought|buy|purchased)[\s:,-]*(.+?)\s+(\d+(?:\.\d+)?)\s*(kg|kilos?|g|grams?|pcs?|pieces?|l|liters?|ml|cans?|bottles?)?\s*(?:for|at|=)?\s*₱?\s*(\d+(?:\.\d+)?)\s*(?:pesos?|php)?$/i);
+    if (!purchase) return null;
+
+    return {
+      item: cleanItemName(purchase[1]),
+      quantity: Number(purchase[2]),
+      unit: purchase[3] || '',
+      amount: Number(purchase[4])
+    };
   }
 
   function addTask(title) {
@@ -106,10 +185,12 @@
     els.quickInput.value = '';
   }
 
-  function addPurchase(p) {
+  function addPurchase(p, silent) {
     data.purchases.unshift({ id: uid(), item: p.item, quantity: p.quantity, unit: p.unit || '', amount: p.amount, createdAt: new Date().toISOString() });
-    saveData(); render(); toast('Purchase added');
-    els.quickInput.value = '';
+    if (!silent) {
+      saveData(); render(); toast('Purchase added');
+      els.quickInput.value = '';
+    }
   }
 
   function render() {
@@ -209,12 +290,89 @@
     toast('In Safari: Share → Add to Home Screen');
   });
 
-  function toast(message) {
-    els.toast.textContent = message;
-    els.toast.classList.add('show');
-    window.clearTimeout(toast._timer);
-    toast._timer = window.setTimeout(function () { els.toast.classList.remove('show'); }, 1800);
+  function setVoiceStatus(message, active) {
+    if (!els.voiceStatus) return;
+    els.voiceStatus.textContent = message;
+    els.voiceStatus.classList.toggle('voice-active', !!active);
   }
+
+  function setupRecognition() {
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceStatus('Voice recognition is not available in this browser. On iOS 12, use the keyboard microphone for now.', false);
+      return null;
+    }
+
+    var r = new SpeechRecognition();
+    r.continuous = false;
+    r.interimResults = true;
+    r.maxAlternatives = 1;
+    r.lang = els.voiceLang ? els.voiceLang.value : 'en-US';
+
+    r.onstart = function () {
+      isListening = true;
+      els.voiceButton.classList.add('listening');
+      els.voiceButton.setAttribute('aria-pressed', 'true');
+      setVoiceStatus('Listening… speak naturally.', true);
+    };
+
+    r.onresult = function (event) {
+      var transcript = '';
+      for (var i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      els.quickInput.value = transcript;
+      if (event.results[event.results.length - 1].isFinal) {
+        setVoiceStatus('Heard: ' + transcript, false);
+        parseAndAdd(transcript);
+      } else {
+        setVoiceStatus('Hearing: ' + transcript, true);
+      }
+    };
+
+    r.onerror = function (event) {
+      isListening = false;
+      els.voiceButton.classList.remove('listening');
+      els.voiceButton.setAttribute('aria-pressed', 'false');
+      var msg = event.error === 'not-allowed' ? 'Microphone permission was denied.' : 'Voice recognition stopped: ' + event.error + '.';
+      setVoiceStatus(msg, false);
+    };
+
+    r.onend = function () {
+      isListening = false;
+      els.voiceButton.classList.remove('listening');
+      els.voiceButton.setAttribute('aria-pressed', 'false');
+      if (els.voiceStatus.textContent === 'Listening… speak naturally.') setVoiceStatus('Ready.', false);
+    };
+
+    return r;
+  }
+
+  els.voiceLang.addEventListener('change', function () {
+    if (recognition) recognition.lang = els.voiceLang.value;
+    setVoiceStatus('Voice language set to ' + els.voiceLang.options[els.voiceLang.selectedIndex].text + '.', false);
+  });
+
+  els.voiceButton.addEventListener('click', function () {
+    if (!recognition) {
+      setVoiceStatus('This iPhone browser does not expose speech recognition. Tap the text box and use the iPhone keyboard microphone.', false);
+      els.quickInput.focus();
+      toast('Use the iPhone keyboard microphone for now');
+      return;
+    }
+    if (isListening) {
+      recognition.stop();
+      return;
+    }
+    recognition.lang = els.voiceLang.value;
+    try {
+      recognition.start();
+    } catch (e) {
+      setVoiceStatus('Voice could not start. Tap again and allow microphone access.', false);
+    }
+  });
+
+  recognition = setupRecognition();
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {

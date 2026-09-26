@@ -1,15 +1,24 @@
-BUGASLIST - Offline PWA starter
+TANDAAN - OFFLINE PERSONAL LIST
 
-1) Open PowerShell in this folder.
-2) Run: npx serve -l 4173
-3) On the same computer, open: http://localhost:4173
-4) Test adding tasks, shopping items, and purchases.
+v3: Voice-ready mobile foundation.
 
-Examples:
-- Mabakal bugas
-- Buy eggs
-- I bought rice 2 kg for 200 pesos
-- eggs 120 pesos
+Features:
+- Todo, shopping and purchase lists
+- Philippine peso totals
+- Local device storage
+- PWA/Home Screen support
+- Offline cache
+- Voice input button with browser speech-recognition support where available
+- iOS 12 fallback: tap the text field and use the iPhone keyboard microphone
+- Local-word normalization for common English / Tagalog / Hiligaynon / Cebuano-style commands
 
-For iPhone testing, the site must eventually be hosted over HTTPS.
-Do not expect the local desktop URL to be reachable from the iPhone unless you deliberately configure a network-accessible dev server; HTTPS is also required for reliable service-worker/PWA testing.
+IMPORTANT ABOUT VOICE:
+The Web Speech API is not reliably available in older iOS Safari versions such as iOS 12. This build therefore keeps voice recognition optional: browsers that expose SpeechRecognition can use the Speak button; older iPhones can use the iPhone keyboard's dictation microphone, which feeds text into Tandaan.
+
+This does not yet provide a fully offline, in-browser multilingual speech model. The next voice-engine phase can add a bundled local model/worker if performance and storage targets are acceptable on the XS Max.
+
+Run locally:
+  npx serve -l 4173
+
+Then open:
+  http://localhost:4173

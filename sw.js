@@ -1,4 +1,4 @@
-const CACHE = 'tandaan-v2';
+const CACHE = 'tandaan-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -16,7 +16,13 @@ self.addEventListener('install', function (event) {
 });
 
 self.addEventListener('activate', function (event) {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then(function (keys) {
+      return Promise.all(keys.map(function (key) {
+        if (key !== CACHE) return caches.delete(key);
+      }));
+    }).then(function () { return self.clients.claim(); })
+  );
 });
 
 self.addEventListener('fetch', function (event) {
@@ -24,9 +30,12 @@ self.addEventListener('fetch', function (event) {
   event.respondWith(
     caches.match(event.request).then(function (cached) {
       return cached || fetch(event.request).then(function (response) {
+        if (!response || !response.ok) return response;
         var copy = response.clone();
         caches.open(CACHE).then(function (cache) { cache.put(event.request, copy); });
         return response;
+      }).catch(function () {
+        return caches.match('./index.html');
       });
     })
   );

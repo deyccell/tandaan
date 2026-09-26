@@ -29,19 +29,32 @@
           <h1>Tandaan</h1>
         </div>
       </div>
-      <button id="installHint" class="ghost-btn" type="button">ⓘ</button>
+      <button id="installHint" class="ghost-btn" type="button" aria-label="Home Screen instructions">ⓘ</button>
     </header>
 
     <section class="quick-add card">
       <div class="section-title-row">
         <h2>Quick Add</h2>
-        <span class="offline-pill">OFFLINE</span>
+        <span class="offline-pill">OFFLINE DATA</span>
       </div>
       <div class="input-row">
-        <input id="quickInput" type="text" autocomplete="off" placeholder="Try: Mabakal bugas">
+        <input id="quickInput" type="text" autocomplete="off" placeholder="Try: Mabakal bugas" enterkeyhint="done">
         <button id="addButton" class="primary-btn" type="button">Add</button>
       </div>
-      <p class="hint">Text first. Voice will be added after the offline foundation is working.</p>
+
+      <div class="voice-row">
+        <button id="voiceButton" class="voice-btn" type="button" aria-pressed="false" aria-label="Voice input">
+          <span class="mic-icon" aria-hidden="true">🎤</span>
+          <span>Speak</span>
+        </button>
+        <select id="voiceLang" class="voice-lang" aria-label="Voice language">
+          <option value="en-US">English</option>
+          <option value="fil-PH">Tagalog / Filipino</option>
+          <option value="ceb-PH">Cebuano / Bisaya</option>
+          <option value="ilo-PH">Hiligaynon / Ilonggo</option>
+        </select>
+      </div>
+      <p id="voiceStatus" class="voice-status">Ready. On iOS 12, the first voice version uses the iPhone keyboard microphone as the reliable fallback.</p>
     </section>
 
     <section class="card">
@@ -72,11 +85,12 @@
     </section>
 
     <section class="card parser-demo">
-      <h2>Command ideas</h2>
+      <h2>Try saying or typing</h2>
       <div class="examples">
         <button type="button" class="example" data-value="Mabakal bugas">Mabakal bugas</button>
         <button type="button" class="example" data-value="Buy eggs">Buy eggs</button>
         <button type="button" class="example" data-value="I bought rice 2 kg for 200 pesos">I bought rice 2 kg for 200 pesos</button>
+        <button type="button" class="example" data-value="Bugas 2 kilos 200, itlog 12 pieces 120, sardinas 3 ka lata 75">Bugas 2 kilos 200, itlog 12 pieces 120, sardinas 3 ka lata 75</button>
       </div>
     </section>
 
