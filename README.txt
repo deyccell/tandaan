@@ -1,52 +1,22 @@
-TANDAAN - OFFLINE PERSONAL LIST
+Tandaan v8
 
-v3: Voice-ready mobile foundation.
+This version adds local multilingual speech-to-text using Transformers.js + the ONNX community Whisper Tiny model.
 
-Features:
-- Todo, shopping and purchase lists
-- Philippine peso totals
-- Local device storage
-- PWA/Home Screen support
-- Offline cache
-- Voice input button with browser speech-recognition support where available
-- iOS 12 fallback: tap the text field and use the iPhone keyboard microphone
-- Local-word normalization for common English / Tagalog / Hiligaynon / Cebuano-style commands
+FIRST SETUP
+1. Open Tandaan while connected to the internet.
+2. Tap "Prepare offline voice".
+3. Wait until it says "Offline voice ready".
+4. The model and ONNX WASM files are cached by Transformers.js in the browser.
+5. After setup, tap Speak, record, and Tandaan transcribes the audio on-device.
 
-IMPORTANT ABOUT VOICE:
-The Web Speech API is not reliably available in older iOS Safari versions such as iOS 12. This build therefore keeps voice recognition optional: browsers that expose SpeechRecognition can use the Speak button; older iPhones can use the iPhone keyboard's dictation microphone, which feeds text into Tandaan.
+IMPORTANT
+The first model setup needs internet. The first download is tens of MB. After the model is cached, the transcription itself does not use Safari SpeechRecognition or a cloud speech service.
 
-This does not yet provide a fully offline, in-browser multilingual speech model. The next voice-engine phase can add a bundled local model/worker if performance and storage targets are acceptable on the XS Max.
+MODEL
+onnx-community/whisper-tiny (multilingual), using the WASM backend with q8 weights. The app intentionally does not force a language so the model can handle automatic language inference.
 
-Run locally:
-  npx serve -l 4173
+VOICE FLOW
+Prepare model -> Speak -> Stop -> local transcription -> review transcript -> Use this text -> Add
 
-Then open:
-  http://localhost:4173
-
-
-Tandaan v4 changes
-- Removed the manual voice-language selector.
-- Added automatic language classification after a transcript is received.
-- Improved shopping-list parsing for English, Tagalog-style, Hiligaynon and Cebuano/Bisaya phrases.
-- Improved long purchase-list parsing for comma/semicolon-separated items.
-- On iOS Home Screen/PWA mode, the Speak button guides the user to the iPhone keyboard microphone when Safari speech recognition is unavailable.
-
-
-Voice UI: no manual language selector. Tandaan uses automatic language detection after transcription.
-
-
-Build 6: removed all visible manual language-selection UI and strengthened service-worker refresh behavior so updated HTML is fetched when online. Language classification remains internal.
-
-
-Tandaan v6
-
-This version adds a Home Screen microphone capture test using the device microphone and MediaRecorder. The recording stays local in the browser and can be previewed. Speech-to-text is intentionally not claimed yet; the next phase can add an offline multilingual transcription engine after microphone capture is verified on the iPhone XS Max and iPhone 12.
-
-
-Tandaan v7 - Voice Focus
-- Requests microphone noise suppression, automatic gain control and echo cancellation as non-required preferences when supported by the browser/device.
-- Adds local Web Audio high-pass/low-pass filtering and gentle dynamics compression before recording.
-- Shows which voice-focus layers were actually enabled on the device.
-- Keeps the original microphone stream as a fallback if Web Audio processing cannot be constructed.
-
-Note: these layers improve noise/level handling but are not the same as a dedicated AI voice-isolation model. A later offline ML denoiser can provide stronger separation from speech-like background sounds.
+MAX RECORDING
+90 seconds per recording in this version.

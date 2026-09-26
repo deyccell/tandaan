@@ -4,9 +4,8 @@
   var STORAGE_KEY = 'tandaan-data-v2';
   var LEGACY_KEY = 'bugaslist-data-v1';
   var data = loadData();
-  var recognition = null;
   var isListening = false;
-  var voiceMode = 'fallback';
+  var voiceMode = 'capture';
   var voiceProcessing = null;
   var voiceFeatures = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, webAudioFocus: false };
 
@@ -367,6 +366,14 @@
     toast('In Safari: Share → Add to Home Screen');
   });
 
+  function toast(message) {
+    els.toast.textContent = message;
+    els.toast.classList.add('show');
+    window.clearTimeout(toast._timer);
+    toast._timer = window.setTimeout(function () { els.toast.classList.remove('show'); }, 2200);
+  }
+
+  // ---------- Local offline speech ----------
   var mediaStream = null;
   var mediaRecorder = null;
   var audioChunks = [];
@@ -376,6 +383,11 @@
   var recordingStartedAt = 0;
   var recordingTimer = null;
   var lastAudioUrl = '';
+  var localWorker = null;
+  var localWorkerReady = false;
+  var workerLoading = false;
+  var pendingTranscription = false;
+  var MAX_RECORDING_SECONDS = 90;
 
   els.recordingPanel = document.getElementById('recordingPanel');
   els.stopVoiceButton = document.getElementById('stopVoiceButton');
@@ -383,6 +395,14 @@
   els.recordingTimer = document.getElementById('recordingTimer');
   els.levelBar = document.getElementById('levelBar');
   els.voicePreview = document.getElementById('voicePreview');
+  els.prepareVoiceButton = document.getElementById('prepareVoiceButton');
+  els.voiceModelStatus = document.getElementById('voiceModelStatus');
+  els.voiceProgress = document.getElementById('voiceProgress');
+  els.voiceProgressWrap = document.getElementById('voiceProgressWrap');
+  els.transcriptCard = document.getElementById('transcriptCard');
+  els.transcriptText = document.getElementById('transcriptText');
+  els.useTranscriptButton = document.getElementById('useTranscriptButton');
+  els.dismissTranscriptButton = document.getElementById('dismissTranscriptButton');
 
   function setVoiceStatus(message, active) {
     if (!els.voiceStatus) return;
@@ -390,12 +410,13 @@
     els.voiceStatus.classList.toggle('voice-active', !!active);
   }
 
-  function isStandalone() {
-    return !!(window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
+  function setModelStatus(message, active) {
+    if (!els.voiceModelStatus) return;
+    els.voiceModelStatus.textContent = message;
+    els.voiceModelStatus.classList.toggle('voice-active', !!active);
   }
 
   function resetVoiceButton() {
-    isListening = false;
     els.voiceButton.classList.remove('listening');
     els.voiceButton.setAttribute('aria-pressed', 'false');
   }
@@ -405,73 +426,6 @@
     var minutes = Math.floor(total / 60);
     var seconds = total % 60;
     return minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
-  }
-
-  // Safari's Web Speech Recognition is kept for normal Safari mode where it is available.
-  function setupRecognition() {
-    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return null;
-
-    var r = new SpeechRecognition();
-    r.continuous = false;
-    r.interimResults = true;
-    r.maxAlternatives = 3;
-
-    r.onstart = function () {
-      isListening = true;
-      voiceMode = 'browser';
-      els.voiceButton.classList.add('listening');
-      els.voiceButton.setAttribute('aria-pressed', 'true');
-      setVoiceStatus('Listening… speak naturally.', true);
-    };
-
-    r.onresult = function (event) {
-      var transcript = '';
-      for (var i = event.resultIndex; i < event.results.length; i++) transcript += event.results[i][0].transcript;
-      els.quickInput.value = transcript;
-      if (event.results[event.results.length - 1].isFinal) {
-        setVoiceStatus('Heard: ' + transcript, false);
-        parseAndAdd(transcript);
-      } else {
-        setVoiceStatus('Hearing: ' + transcript, true);
-      }
-    };
-
-    r.onerror = function (event) {
-      resetVoiceButton();
-      if (event.error === 'service-not-allowed') {
-        setVoiceStatus('Safari voice service is unavailable here. Tandaan can still capture microphone audio in supported standalone mode.', false);
-        return;
-      }
-      if (event.error === 'not-allowed') {
-        setVoiceStatus('Microphone or speech permission was denied. Check Settings, then try again.', false);
-        return;
-      }
-      setVoiceStatus('Voice recognition stopped: ' + event.error + '.', false);
-    };
-
-    r.onend = function () {
-      resetVoiceButton();
-      if (els.voiceStatus.textContent.indexOf('Listening…') === 0) setVoiceStatus('Ready.', false);
-    };
-
-    return r;
-  }
-
-  function updateVoiceFocusBadge() {
-    if (!els.voiceFocusBadge) return;
-    var active = [];
-    if (voiceFeatures.noiseSuppression) active.push('noise reduction');
-    if (voiceFeatures.autoGainControl) active.push('level control');
-    if (voiceFeatures.echoCancellation) active.push('echo control');
-    if (voiceFeatures.webAudioFocus) active.push('voice EQ/compression');
-    if (!active.length) {
-      els.voiceFocusBadge.textContent = 'Voice Focus: basic microphone';
-      els.voiceFocusBadge.classList.remove('active');
-      return;
-    }
-    els.voiceFocusBadge.textContent = 'Voice Focus: ' + active.join(' + ');
-    els.voiceFocusBadge.classList.add('active');
   }
 
   function getAudioSupport() {
@@ -487,7 +441,6 @@
   function buildAudioConstraints() {
     var supported = getAudioSupport();
     var audio = {};
-    // These are preferences, not exact requirements, so unsupported devices can still record.
     if (supported.echoCancellation !== false) audio.echoCancellation = true;
     if (supported.noiseSuppression !== false) audio.noiseSuppression = true;
     if (supported.autoGainControl !== false) audio.autoGainControl = true;
@@ -495,77 +448,12 @@
     return audio;
   }
 
-  function rememberTrackSettings(stream) {
-    voiceFeatures.echoCancellation = false;
-    voiceFeatures.noiseSuppression = false;
-    voiceFeatures.autoGainControl = false;
-    try {
-      var track = stream.getAudioTracks()[0];
-      var settings = track && track.getSettings ? track.getSettings() : {};
-      voiceFeatures.echoCancellation = settings.echoCancellation === true;
-      voiceFeatures.noiseSuppression = settings.noiseSuppression === true;
-      voiceFeatures.autoGainControl = settings.autoGainControl === true;
-    } catch (e) {}
-    updateVoiceFocusBadge();
-  }
-
-  function stopVoiceProcessing() {
-    if (!voiceProcessing) return;
-    try { voiceProcessing.context.close(); } catch (e) {}
-    voiceProcessing = null;
-    voiceFeatures.webAudioFocus = false;
-    updateVoiceFocusBadge();
-  }
-
-  function createVoiceFocusedStream(sourceStream) {
-    var AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx || !sourceStream || !sourceStream.getAudioTracks().length) return sourceStream;
-    try {
-      var context = new AudioCtx();
-      var source = context.createMediaStreamSource(sourceStream);
-      // Remove very low rumble and extreme high-frequency hiss while keeping the speech band.
-      var highPass = context.createBiquadFilter();
-      highPass.type = 'highpass';
-      highPass.frequency.value = 90;
-      highPass.Q.value = 0.7;
-
-      var lowPass = context.createBiquadFilter();
-      lowPass.type = 'lowpass';
-      lowPass.frequency.value = 10500;
-      lowPass.Q.value = 0.7;
-
-      var compressor = context.createDynamicsCompressor();
-      compressor.threshold.value = -22;
-      compressor.knee.value = 18;
-      compressor.ratio.value = 3;
-      compressor.attack.value = 0.006;
-      compressor.release.value = 0.18;
-
-      var destination = context.createMediaStreamDestination();
-      source.connect(highPass);
-      highPass.connect(lowPass);
-      lowPass.connect(compressor);
-      compressor.connect(destination);
-
-      if (context.state === 'suspended' && context.resume) {
-        context.resume().catch(function () {});
-      }
-
-      voiceProcessing = { context: context, destination: destination };
-      voiceFeatures.webAudioFocus = true;
-      updateVoiceFocusBadge();
-      return destination.stream;
-    } catch (e) {
-      stopVoiceProcessing();
-      return sourceStream;
+  function updateRecordingTimer() {
+    var elapsed = Date.now() - recordingStartedAt;
+    els.recordingTimer.textContent = formatTime(elapsed);
+    if (elapsed >= MAX_RECORDING_SECONDS * 1000 && mediaRecorder && mediaRecorder.state !== 'inactive') {
+      stopRecording();
     }
-  }
-
-  function chooseRecorderMimeType() {
-    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
-    var types = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/aac'];
-    for (var i = 0; i < types.length; i++) if (MediaRecorder.isTypeSupported(types[i])) return types[i];
-    return '';
   }
 
   function stopLevelMeter() {
@@ -578,9 +466,9 @@
   }
 
   function startLevelMeter(stream) {
-    if (!window.AudioContext && !window.webkitAudioContext) return;
+    var AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
     try {
-      var AudioCtx = window.AudioContext || window.webkitAudioContext;
       levelContext = new AudioCtx();
       var source = levelContext.createMediaStreamSource(stream);
       analyser = levelContext.createAnalyser();
@@ -606,151 +494,284 @@
     }
   }
 
-  function updateRecordingTimer() {
-    var elapsed = Date.now() - recordingStartedAt;
-    var total = Math.floor(elapsed / 1000);
-    var minutes = Math.floor(total / 60);
-    var seconds = total % 60;
-    els.recordingTimer.textContent = minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+  function chooseRecorderMimeType() {
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+    var types = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/aac'];
+    for (var i = 0; i < types.length; i++) {
+      if (MediaRecorder.isTypeSupported(types[i])) return types[i];
+    }
+    return '';
   }
 
-  function finishRecording() {
-    resetVoiceButton();
+  function clearTranscriptCard() {
+    if (els.transcriptCard) els.transcriptCard.hidden = true;
+    if (els.transcriptText) els.transcriptText.textContent = '';
+    pendingTranscription = false;
+  }
+
+  function showTranscript(text) {
+    els.transcriptText.textContent = text;
+    els.transcriptCard.hidden = false;
+    els.quickInput.value = text;
+    pendingTranscription = true;
+    setVoiceStatus('Transcript ready. Review it, then tap Add.', false);
+  }
+
+  function initLocalWorker() {
+    if (localWorker) return localWorker;
+    if (!window.Worker) {
+      setModelStatus('This browser does not support background workers.', false);
+      return null;
+    }
+    try {
+      localWorker = new Worker('./voice-worker.js?v=1', { type: 'module' });
+      localWorker.onmessage = function (event) {
+        var msg = event.data || {};
+        if (msg.type === 'progress') {
+          workerLoading = true;
+          if (els.voiceProgressWrap) els.voiceProgressWrap.hidden = false;
+          var pct = Math.max(0, Math.min(100, Number(msg.progress || 0)));
+          if (els.voiceProgress) els.voiceProgress.value = pct;
+          var suffix = msg.file ? ' — ' + msg.file : '';
+          setModelStatus('Preparing offline voice ' + Math.round(pct) + '%' + suffix, true);
+        } else if (msg.type === 'loading') {
+          workerLoading = true;
+          setModelStatus(msg.message || 'Preparing offline voice…', true);
+        } else if (msg.type === 'ready') {
+          localWorkerReady = true;
+          workerLoading = false;
+          if (els.voiceProgressWrap) els.voiceProgressWrap.hidden = true;
+          if (els.prepareVoiceButton) {
+            els.prepareVoiceButton.textContent = 'Offline voice ready';
+            els.prepareVoiceButton.disabled = true;
+          }
+          setModelStatus('Offline voice ready. It can transcribe without Safari voice service.', true);
+          toast('Offline voice is ready');
+        } else if (msg.type === 'result') {
+          pendingTranscription = false;
+          localWorkerReady = true;
+          var text = String(msg.text || '').trim();
+          if (text) {
+            showTranscript(text);
+            toast('Transcription complete');
+          } else {
+            setVoiceStatus('I could not hear enough speech. Try again closer to the phone.', false);
+          }
+        } else if (msg.type === 'error') {
+          workerLoading = false;
+          pendingTranscription = false;
+          setModelStatus('Voice model error: ' + (msg.message || 'Unknown error'), false);
+          setVoiceStatus('Local transcription failed. The recording is still available below.', false);
+          if (els.prepareVoiceButton) {
+            els.prepareVoiceButton.disabled = false;
+            els.prepareVoiceButton.textContent = 'Retry offline voice setup';
+          }
+        }
+      };
+      localWorker.onerror = function () {
+        workerLoading = false;
+        setModelStatus('Voice worker could not start. Refresh and try again.', false);
+        if (els.prepareVoiceButton) els.prepareVoiceButton.disabled = false;
+      };
+      return localWorker;
+    } catch (e) {
+      setModelStatus('Could not start the local voice worker.', false);
+      return null;
+    }
+  }
+
+  function prepareOfflineVoice() {
+    if (localWorkerReady || workerLoading) return;
+    var worker = initLocalWorker();
+    if (!worker) return;
+    if (els.prepareVoiceButton) els.prepareVoiceButton.disabled = true;
+    workerLoading = true;
+    setModelStatus('Starting offline voice setup…', true);
+    worker.postMessage({ type: 'load' });
+  }
+
+  function stopCaptureResources() {
     if (recordingTimer) window.clearInterval(recordingTimer);
     recordingTimer = null;
     stopLevelMeter();
-    stopVoiceProcessing();
-    if (mediaStream) mediaStream.getTracks().forEach(function (track) { track.stop(); });
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(function (track) { try { track.stop(); } catch (e) {} });
+    }
     mediaStream = null;
+    resetVoiceButton();
     els.recordingPanel.hidden = true;
   }
 
-  function startStandaloneCapture() {
+  function audioBlobTo16kMono(blob) {
+    return blob.arrayBuffer().then(function (buffer) {
+      var AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) throw new Error('Web Audio is unavailable');
+      var context = new AudioCtx();
+      return context.decodeAudioData(buffer).then(function (decoded) {
+        var targetRate = 16000;
+        var frameCount = Math.max(1, Math.ceil(decoded.duration * targetRate));
+        var OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        if (decoded.sampleRate === targetRate) {
+          var channel = decoded.numberOfChannels ? decoded.getChannelData(0) : new Float32Array(0);
+          var copy = new Float32Array(channel.length);
+          copy.set(channel);
+          try { context.close(); } catch (e) {}
+          return copy;
+        }
+        if (!OfflineCtx) throw new Error('Offline audio resampling is unavailable');
+        var offline = new OfflineCtx(1, frameCount, targetRate);
+        var source = offline.createBufferSource();
+        var monoBuffer = offline.createBuffer(1, decoded.length, decoded.sampleRate);
+        var mono = monoBuffer.getChannelData(0);
+        if (decoded.numberOfChannels === 1) {
+          mono.set(decoded.getChannelData(0));
+        } else {
+          var channels = [];
+          for (var c = 0; c < decoded.numberOfChannels; c++) channels.push(decoded.getChannelData(c));
+          for (var i = 0; i < decoded.length; i++) {
+            var total = 0;
+            for (var c2 = 0; c2 < channels.length; c2++) total += channels[c2][i] || 0;
+            mono[i] = total / channels.length;
+          }
+        }
+        source.buffer = monoBuffer;
+        source.connect(offline.destination);
+        source.start(0);
+        return offline.startRendering().then(function (rendered) {
+          try { context.close(); } catch (e) {}
+          var out = rendered.getChannelData(0);
+          var copy2 = new Float32Array(out.length);
+          copy2.set(out);
+          return copy2;
+        });
+      });
+    });
+  }
+
+  function transcribeBlob(blob) {
+    if (!localWorkerReady) {
+      setVoiceStatus('Prepare offline voice first. The first setup needs internet to download the model.', false);
+      return;
+    }
+    var worker = initLocalWorker();
+    if (!worker) return;
+    pendingTranscription = true;
+    setVoiceStatus('Preparing audio for local transcription…', true);
+    audioBlobTo16kMono(blob).then(function (audio) {
+      // Transfer the PCM buffer to the worker so the UI thread is not blocked by a large copy.
+      worker.postMessage({ type: 'transcribe', audio: audio }, [audio.buffer]);
+    }).catch(function (error) {
+      pendingTranscription = false;
+      setVoiceStatus('Could not prepare the recording for transcription: ' + (error.message || 'audio error'), false);
+    });
+  }
+
+  function startRecording() {
+    clearTranscriptCard();
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setVoiceStatus('This Home Screen app cannot access the microphone on this device. Open Tandaan in Safari to test microphone access.', false);
-      toast('Microphone API unavailable');
+      setVoiceStatus('Microphone access is unavailable in this browser.', false);
       return;
     }
     if (!window.MediaRecorder) {
-      setVoiceStatus('Microphone access is available, but this browser cannot record audio yet.', false);
-      toast('Audio recording not supported');
+      setVoiceStatus('Audio recording is unavailable in this browser.', false);
       return;
     }
-
-    navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints() })
-      .then(function (stream) {
-        mediaStream = stream;
-        rememberTrackSettings(stream);
-        var recordingStream = createVoiceFocusedStream(stream);
-        audioChunks = [];
-        var mimeType = chooseRecorderMimeType();
-        try {
-          mediaRecorder = mimeType ? new MediaRecorder(recordingStream, { mimeType: mimeType }) : new MediaRecorder(recordingStream);
-        } catch (e) {
-          mediaRecorder = new MediaRecorder(recordingStream);
-        }
-        mediaRecorder.ondataavailable = function (event) {
-          if (event.data && event.data.size) audioChunks.push(event.data);
-        };
-        mediaRecorder.onerror = function () {
-          finishRecording();
-          setVoiceStatus('Audio recording failed. Please try again.', false);
-        };
-        mediaRecorder.onstop = function () {
-          var type = mediaRecorder.mimeType || mimeType || 'audio/mp4';
-          var blob = new Blob(audioChunks, { type: type });
-          if (lastAudioUrl) URL.revokeObjectURL(lastAudioUrl);
-          lastAudioUrl = URL.createObjectURL(blob);
-          els.voicePreview.src = lastAudioUrl;
-          els.voicePreview.hidden = false;
-          finishRecording();
-          setVoiceStatus('Audio captured locally. Next step: offline transcription.', false);
-          toast('Microphone test complete');
-        };
-
-        mediaRecorder.start(250);
-        isListening = true;
-        voiceMode = 'capture';
-        recordingStartedAt = Date.now();
-        els.recordingPanel.hidden = false;
-        els.recordingLabel.textContent = 'Recording locally';
-        els.recordingTimer.textContent = '0:00';
-        els.voiceButton.classList.add('listening');
-        els.voiceButton.setAttribute('aria-pressed', 'true');
-        setVoiceStatus('Voice Focus is active when supported. Talk, then tap Stop recording.', true);
-        startLevelMeter(stream);
-        recordingTimer = window.setInterval(updateRecordingTimer, 250);
-      })
-      .catch(function (error) {
-        resetVoiceButton();
-        var code = error && error.name ? error.name : 'unknown';
-        if (code === 'NotAllowedError' || code === 'SecurityError') {
-          setVoiceStatus('Microphone permission was denied or blocked. Open Tandaan in Safari and allow Microphone, then try again.', false);
-        } else {
-          setVoiceStatus('Could not open the microphone: ' + code + '.', false);
-        }
-      });
+    navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints() }).then(function (stream) {
+      mediaStream = stream;
+      audioChunks = [];
+      var recordingStream = stream;
+      var mimeType = chooseRecorderMimeType();
+      try {
+        mediaRecorder = mimeType ? new MediaRecorder(recordingStream, { mimeType: mimeType }) : new MediaRecorder(recordingStream);
+      } catch (e) {
+        mediaRecorder = new MediaRecorder(recordingStream);
+      }
+      mediaRecorder.ondataavailable = function (event) {
+        if (event.data && event.data.size) audioChunks.push(event.data);
+      };
+      mediaRecorder.onerror = function () {
+        stopCaptureResources();
+        setVoiceStatus('Audio recording failed. Please try again.', false);
+      };
+      mediaRecorder.onstop = function () {
+        var type = mediaRecorder.mimeType || mimeType || 'audio/mp4';
+        var blob = new Blob(audioChunks, { type: type });
+        if (lastAudioUrl) URL.revokeObjectURL(lastAudioUrl);
+        lastAudioUrl = URL.createObjectURL(blob);
+        els.voicePreview.src = lastAudioUrl;
+        els.voicePreview.hidden = false;
+        stopCaptureResources();
+        transcribeBlob(blob);
+      };
+      mediaRecorder.start(250);
+      recordingStartedAt = Date.now();
+      els.recordingPanel.hidden = false;
+      els.recordingLabel.textContent = 'Listening locally';
+      els.recordingTimer.textContent = '0:00';
+      els.voiceButton.classList.add('listening');
+      els.voiceButton.setAttribute('aria-pressed', 'true');
+      setVoiceStatus('Listening… speak naturally. Tap Stop when finished.', true);
+      startLevelMeter(stream);
+      recordingTimer = window.setInterval(updateRecordingTimer, 250);
+    }).catch(function (error) {
+      resetVoiceButton();
+      var code = error && error.name ? error.name : 'unknown';
+      if (code === 'NotAllowedError' || code === 'SecurityError') {
+        setVoiceStatus('Microphone permission was denied or blocked. Allow Microphone for Tandaan, then try again.', false);
+      } else {
+        setVoiceStatus('Could not open the microphone: ' + code + '.', false);
+      }
+    });
   }
 
-  function stopStandaloneCapture() {
+  function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
-      return;
     }
-    finishRecording();
   }
 
-  els.stopVoiceButton.addEventListener('click', function () {
-    stopStandaloneCapture();
-  });
-
+  els.prepareVoiceButton.addEventListener('click', prepareOfflineVoice);
+  els.stopVoiceButton.addEventListener('click', stopRecording);
   els.voiceButton.addEventListener('click', function () {
-    if (voiceMode === 'capture' && mediaRecorder) {
-      stopStandaloneCapture();
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      stopRecording();
       return;
     }
-    if (isListening && recognition) {
-      recognition.stop();
+    if (!localWorkerReady) {
+      prepareOfflineVoice();
+      setVoiceStatus('Preparing the offline voice model. Tap Speak again after it says “Offline voice ready.”', false);
       return;
     }
-
-    if (isStandalone()) {
-      startStandaloneCapture();
-      return;
-    }
-
-    if (!recognition) {
-      startStandaloneCapture();
-      return;
-    }
-
-    try {
-      recognition.start();
-    } catch (e) {
-      resetVoiceButton();
-      setVoiceStatus('Voice could not start. Try again.', false);
-    }
+    startRecording();
   });
 
-  recognition = setupRecognition();
+  els.useTranscriptButton.addEventListener('click', function () {
+    var value = els.transcriptText.textContent.trim();
+    if (!value) return;
+    els.quickInput.value = value;
+    els.quickInput.focus();
+    clearTranscriptCard();
+    toast('Transcript placed in Quick Add');
+  });
+
+  els.dismissTranscriptButton.addEventListener('click', function () {
+    clearTranscriptCard();
+    els.quickInput.value = '';
+    setVoiceStatus('Ready.', false);
+  });
+
+  if (els.prepareVoiceButton) {
+    els.prepareVoiceButton.textContent = 'Prepare offline voice';
+    els.prepareVoiceButton.disabled = false;
+  }
+  setModelStatus('First setup downloads a multilingual Whisper model (tens of MB). After it is cached, transcription runs on this device.', false);
+  if (els.voiceProgressWrap) els.voiceProgressWrap.hidden = true;
+  setVoiceStatus('Tap Prepare offline voice once, then use Speak.', false);
   updateVoiceFocusBadge();
-  if (!recognition) setVoiceStatus('Tap Speak to test the microphone.', false);
-
-  function toast(message) {
-    els.toast.textContent = message;
-    els.toast.classList.add('show');
-    window.clearTimeout(toast._timer);
-    toast._timer = window.setTimeout(function () { els.toast.classList.remove('show'); }, 2200);
-  }
-
-  recognition = setupRecognition();
-  if (!recognition && !isStandalone()) {
-    setVoiceStatus('Use the iPhone keyboard microphone to dictate.', false);
-  }
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('./sw.js').catch(function () { /* Offline cache is optional during local development. */ });
+      navigator.serviceWorker.register('./sw.js').catch(function () {});
     });
   }
 

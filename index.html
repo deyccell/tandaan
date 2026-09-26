@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Tandaan">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=7">
+  <link rel="stylesheet" href="styles.css?v=10">
   <title>Tandaan</title>
 </head>
 <body>
@@ -48,7 +48,14 @@
           <span>Speak</span>
         </button>
       </div>
-      <p id="voiceStatus" class="voice-status">Tap Speak and talk naturally.</p>
+      <p id="voiceStatus" class="voice-status">Tap Prepare offline voice once, then use Speak.</p>
+      <div class="voice-controls">
+        <button id="prepareVoiceButton" class="secondary-btn" type="button">Prepare offline voice</button>
+        <span id="voiceModelStatus" class="voice-model-status">Checking local voice model…</span>
+      </div>
+      <div id="voiceProgressWrap" class="voice-progress-wrap" hidden>
+        <progress id="voiceProgress" class="voice-progress" max="100" value="0"></progress>
+      </div>
       <div id="voiceFocusBadge" class="voice-focus-badge">Voice Focus: preparing…</div>
       <div id="recordingPanel" class="recording-panel" hidden>
         <div class="recording-head">
@@ -62,6 +69,14 @@
         <button id="stopVoiceButton" class="stop-btn" type="button">Stop recording</button>
       </div>
       <audio id="voicePreview" class="voice-preview" controls hidden></audio>
+      <div id="transcriptCard" class="transcript-card" hidden>
+        <div class="transcript-label">Local transcription</div>
+        <div id="transcriptText" class="transcript-text"></div>
+        <div class="transcript-actions">
+          <button id="useTranscriptButton" class="primary-btn transcript-use" type="button">Use this text</button>
+          <button id="dismissTranscriptButton" class="ghost-btn transcript-dismiss" type="button" aria-label="Dismiss transcript">✕</button>
+        </div>
+      </div>
     </section>
 
     <section class="card">
@@ -105,6 +120,6 @@
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>
