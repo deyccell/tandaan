@@ -22,3 +22,11 @@ Run locally:
 
 Then open:
   http://localhost:4173
+
+
+Tandaan v4 changes
+- Removed the manual voice-language selector.
+- Added automatic language classification after a transcript is received.
+- Improved shopping-list parsing for English, Tagalog-style, Hiligaynon and Cebuano/Bisaya phrases.
+- Improved long purchase-list parsing for comma/semicolon-separated items.
+- On iOS Home Screen/PWA mode, the Speak button guides the user to the iPhone keyboard microphone when Safari speech recognition is unavailable.

@@ -6,13 +6,14 @@
   var data = loadData();
   var recognition = null;
   var isListening = false;
+  var voiceMode = 'fallback';
 
   var els = {
     quickInput: document.getElementById('quickInput'),
     addButton: document.getElementById('addButton'),
     voiceButton: document.getElementById('voiceButton'),
     voiceStatus: document.getElementById('voiceStatus'),
-    voiceLang: document.getElementById('voiceLang'),
+    languageBadge: document.getElementById('languageBadge'),
     taskList: document.getElementById('taskList'),
     shoppingList: document.getElementById('shoppingList'),
     purchaseList: document.getElementById('purchaseList'),
@@ -72,60 +73,158 @@
   }
 
   function cleanItemName(value) {
-    return value
-      .replace(/^\s*(?:ko|mo|nako|ako)\s+/i, '')
+    return String(value)
+      .replace(/^\s*(?:(?:ko|mo|nako|ako)\s+)+(?:of|that)?\s*/i, '')
+      .replace(/^\s*(?:of|that)\s+/i, '')
+      .replace(/\b(?:please|palihug)\b/gi, '')
       .replace(/\s+/g, ' ')
-      .replace(/[,.]+$/, '')
+      .replace(/^[\s,.-]+|[\s,.-]+$/g, '')
       .trim();
   }
 
   function normalizeLocalWords(text) {
-    return text
-      .replace(/\bmabakal\b/gi, 'buy')
-      .replace(/\mbakal\b/gi, 'buy')
+    return String(text)
+      .replace(/\b(?:mabakal|mabuy)\b/gi, 'buy')
+      .replace(/\bbakal(?:on)?\b/gi, 'buy')
       .replace(/\bpalit(?:on)?\b/gi, 'buy')
-      .replace(/\bpaliton\b/gi, 'buy')
-      .replace(/\bnabakal\b/gi, 'bought')
-      .replace(/\bnakabakal\b/gi, 'bought')
+      .replace(/\bpalita\b/gi, 'buy')
+      .replace(/\b(?:nabakal|nakabakal|nakapalit|nabili|binili)\b/gi, 'bought')
       .replace(/\bkag\b/gi, 'and')
-      .replace(/\bnga\b/gi, 'that')
+      .replace(/\bug\b/gi, 'and')
+      .replace(/\bat\b/gi, 'and')
       .replace(/\bsang\b/gi, 'of')
+      .replace(/\bnga\b/gi, 'that')
+      .replace(/\bng\b/gi, 'of')
       .replace(/\bbugas\b/gi, 'rice')
       .replace(/\bhumay\b/gi, 'rice')
       .replace(/\bitlog\b/gi, 'eggs')
       .replace(/\bkatong itlog\b/gi, 'eggs')
       .replace(/\blata\b/gi, 'cans')
       .replace(/\bka lata\b/gi, 'cans')
-      .replace(/\bkilo\b/gi, 'kg')
-      .replace(/\bkilos\b/gi, 'kg')
+      .replace(/\bbote\b/gi, 'bottle')
+      .replace(/\bkilo(?:s)?\b/gi, 'kg')
+      .replace(/\bgramo(?:s)?\b/gi, 'g')
       .replace(/\btatlo\b/gi, '3')
       .replace(/\bduha\b/gi, '2')
+      .replace(/\bduha ka\b/gi, '2')
+      .replace(/\busa\b/gi, '1')
       .replace(/\bisa\b/gi, '1')
-      .replace(/\busa\b/gi, '1');
+      .replace(/\bnapulo\b/gi, '10')
+      .replace(/\bnapulo kag duha\b/gi, '12');
+  }
+
+  function detectLanguage(text) {
+    var t = ' ' + String(text).toLowerCase().replace(/[^a-záéíóúñ0-9]+/gi, ' ') + ' ';
+    var scores = { English: 0, 'Tagalog / Filipino': 0, 'Hiligaynon / Ilonggo': 0, 'Cebuano / Bisaya': 0 };
+    var english = [' buy ', ' bought ', ' purchase ', ' purchased ', ' need ', ' shopping ', ' rice ', ' eggs ', ' pesos ', ' please '];
+    var tagalog = [' bumili ', ' bilhin ', ' nabili ', ' binili ', ' kailangan ', ' pambili ', ' ako ', ' para sa ', ' magkano '];
+    var hiligaynon = [' mabakal ', ' sang ', ' kag ', ' gid ', ' indi ', ' ara ', ' bugas ', ' bakal '];
+    var cebuano = [' palit ', ' paliton ', ' nabakal ', ' ug ', ' kay ', ' naa ', ' kinahanglan ', ' bisaya '];
+    english.forEach(function (w) { if (t.indexOf(w) >= 0) scores.English++; });
+    tagalog.forEach(function (w) { if (t.indexOf(w) >= 0) scores['Tagalog / Filipino']++; });
+    hiligaynon.forEach(function (w) { if (t.indexOf(w) >= 0) scores['Hiligaynon / Ilonggo']++; });
+    cebuano.forEach(function (w) { if (t.indexOf(w) >= 0) scores['Cebuano / Bisaya']++; });
+
+    var ranked = Object.keys(scores).sort(function (a, b) { return scores[b] - scores[a]; });
+    var top = ranked[0];
+    var second = ranked[1];
+    if (scores[top] === 0) return 'Undetermined';
+    if (scores[top] === scores[second] && scores[top] > 0) return 'Mixed / Multilingual';
+    if (scores[top] >= 2 && scores[second] >= 1) return 'Mixed / Multilingual';
+    return top;
+  }
+
+  function setLanguageBadge(text) {
+    if (!els.languageBadge) return;
+    var language = detectLanguage(text);
+    els.languageBadge.textContent = 'Language: ' + language;
+  }
+
+  function wordsToNumber(str) {
+    var m = String(str).trim().toLowerCase();
+    var map = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10, eleven:11, twelve:12, isa:1, usa:1, duha:2, tatlo:3, upat:4, lima:5, unom:6, pito:7, walo:8, siyam:9, napulo:10 };
+    return Object.prototype.hasOwnProperty.call(map, m) ? map[m] : Number(m);
   }
 
   function parseAmount(str) {
-    var m = String(str).match(/₱?\s*(\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)/);
+    var m = String(str).match(/(?:₱\s*)?(\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)/);
     return m ? Number(m[1].replace(/,/g, '')) : null;
   }
 
+  function splitListItems(text) {
+    var normalized = normalizeLocalWords(text)
+      .replace(/\s+and\s+/gi, ',')
+      .replace(/\s+&\s+/g, ',');
+    return normalized.split(/[;,]+/).map(function (p) { return p.trim(); }).filter(Boolean);
+  }
+
+  function parseListPurchasePart(part) {
+    var s = part.trim();
+    var money = null;
+    var amountMatch = s.match(/(?:₱\s*)?(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:pesos?|php)?\s*$/i);
+    if (amountMatch) {
+      money = Number(amountMatch[1].replace(/,/g, ''));
+      s = s.slice(0, amountMatch.index).trim();
+    }
+    if (money === null) return null;
+
+    var qty = 1;
+    var unit = '';
+    var qtyMatch = s.match(/(?:^|\s)(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|isa|usa|duha|tatlo|upat|lima|unom|pito|walo|siyam|napulo)\s*(kg|kilo|kilos|g|gram|grams|pcs|pc|piece|pieces|l|liter|liters|ml|can|cans|bottle|bottles|ka\s+lata)?/i);
+    var digitQtyMatch = s.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(kg|kilo|kilos|g|gram|grams|pcs|pc|piece|pieces|l|liter|liters|ml|can|cans|bottle|bottles|ka\s+lata)?/i);
+    var qMatch = qtyMatch || digitQtyMatch;
+    if (qMatch) {
+      qty = wordsToNumber(qMatch[1]);
+      unit = qMatch[2] || '';
+      unit = unit.replace(/^kilos?$/i, 'kg').replace(/^grams?$/i, 'g').replace(/^pcs?$/i, 'pcs').replace(/^pieces?$/i, 'pcs').replace(/^cans?$/i, 'can').replace(/^bottles?$/i, 'bottle');
+      s = (s.slice(0, qMatch.index) + ' ' + s.slice(qMatch.index + qMatch[0].length)).replace(/\s+/g, ' ').trim();
+    }
+    var item = cleanItemName(s);
+    if (!item) return null;
+    return { item: item, quantity: Number(qty || 1), unit: unit, amount: money };
+  }
+
+  function parsePurchase(text) {
+    var converted = normalizeLocalWords(text).replace(/\s+/g, ' ').trim();
+    var explicit = converted.match(/^(?:i\s+)?(?:bought|purchased)\s+(?:ko\s+)?(.+?)\s+(\d+(?:\.\d+)?)\s*(kg|kilo|kilos|g|gram|grams|pcs|pc|piece|pieces|l|liter|liters|ml|can|cans|bottle|bottles)?\s*(?:for|at|=)?\s*₱?\s*(\d+(?:\.\d+)?)\s*(?:pesos?|php)?$/i);
+    if (explicit) {
+      return { item: cleanItemName(explicit[1]), quantity: Number(explicit[2]), unit: normalizeUnit(explicit[3] || ''), amount: Number(explicit[4]) };
+    }
+
+    var convertedBuy = converted.match(/^buy\s+(.+?)\s+(\d+(?:\.\d+)?)\s*(kg|kilo|kilos|g|gram|grams|pcs|pc|piece|pieces|l|liter|liters|ml|can|cans|bottle|bottles)?\s*(?:for|at|=)?\s*₱?\s*(\d+(?:\.\d+)?)\s*(?:pesos?|php)?$/i);
+    if (convertedBuy) {
+      return { item: cleanItemName(convertedBuy[1]), quantity: Number(convertedBuy[2]), unit: normalizeUnit(convertedBuy[3] || ''), amount: Number(convertedBuy[4]) };
+    }
+
+    return null;
+  }
+
+  function normalizeUnit(unit) {
+    return String(unit || '').toLowerCase().replace(/^kilo(?:s)?$/, 'kg').replace(/^gram(?:s)?$/, 'g').replace(/^pcs?$/, 'pcs').replace(/^pieces?$/, 'pcs').replace(/^cans?$/, 'can').replace(/^bottles?$/, 'bottle');
+  }
+
+  function parseShoppingItems(text) {
+    var converted = normalizeLocalWords(text).replace(/^\s*(?:buy|to buy|need to buy|need|add to shopping list)\s*/i, '');
+    var pieces = splitListItems(converted);
+    return pieces.map(function (p) { return cleanItemName(p); }).filter(Boolean);
+  }
+
   function parseAndAdd(input) {
-    var text = input.trim();
+    var text = String(input || '').trim();
     if (!text) return;
 
-    var converted = normalizeLocalWords(text);
-    var normalized = converted.toLowerCase();
+    setLanguageBadge(text);
 
-    // Multiple purchases in one typed/voice sentence separated by commas or semicolons.
+    var converted = normalizeLocalWords(text);
+    var lower = converted.toLowerCase();
+
+    // Long purchase list: "Rice 2 kg 200, eggs 12 120, sardines 3 cans 75"
     if (/[;,]/.test(text)) {
-      var parts = text.split(/[;,]+/).map(function (p) { return p.trim(); }).filter(Boolean);
-      var addedAny = false;
-      parts.forEach(function (part) {
-        var result = parsePurchase(part);
-        if (result) { addPurchase(result, true); addedAny = true; }
-      });
-      if (addedAny) {
-        saveData(); render(); toast('Purchases added');
+      var rawParts = text.split(/[;,]+/).map(function (p) { return p.trim(); }).filter(Boolean);
+      var purchases = rawParts.map(parseListPurchasePart).filter(Boolean);
+      if (purchases.length === rawParts.length && purchases.length) {
+        purchases.forEach(function (p) { addPurchase(p, true); });
+        saveData(); render(); toast(purchases.length + ' purchases added');
         els.quickInput.value = '';
         return;
       }
@@ -137,40 +236,24 @@
       return;
     }
 
-    var shopping = converted.match(/^(?:buy|to buy|need to buy|need|add to shopping list)[\s:,-]+(.+)$/i);
-    if (shopping) {
-      addShopping(cleanItemName(shopping[1]));
-      return;
-    }
-
-    // Loose purchase: "rice 200 pesos", "eggs ₱120".
     var loosePurchase = text.match(/^(.+?)[\s,-]+₱?\s*(\d+(?:\.\d+)?)\s*(?:pesos?|php)$/i);
     if (loosePurchase) {
       addPurchase({ item: cleanItemName(loosePurchase[1]), quantity: 1, unit: '', amount: Number(loosePurchase[2]) });
       return;
     }
 
-    // If local wording converted cleanly into a shopping command, use it.
-    var localShopping = normalized.match(/^(?:buy)[\s:,-]+(.+)$/i);
-    if (localShopping) {
-      addShopping(cleanItemName(localShopping[1]));
-      return;
+    var shoppingTrigger = /^(?:buy|to buy|need to buy|need|add to shopping list)\b/i.test(lower);
+    var localShoppingTrigger = /\b(?:mabakal|bakal|palit|paliton)\b/i.test(text);
+    if (shoppingTrigger || localShoppingTrigger) {
+      var items = parseShoppingItems(text);
+      if (items.length) {
+        items.forEach(addShopping);
+        els.quickInput.value = '';
+        return;
+      }
     }
 
     addTask(text);
-  }
-
-  function parsePurchase(text) {
-    var converted = normalizeLocalWords(text);
-    var purchase = converted.match(/^(?:i\s+)?(?:bought|buy|purchased)[\s:,-]*(.+?)\s+(\d+(?:\.\d+)?)\s*(kg|kilos?|g|grams?|pcs?|pieces?|l|liters?|ml|cans?|bottles?)?\s*(?:for|at|=)?\s*₱?\s*(\d+(?:\.\d+)?)\s*(?:pesos?|php)?$/i);
-    if (!purchase) return null;
-
-    return {
-      item: cleanItemName(purchase[1]),
-      quantity: Number(purchase[2]),
-      unit: purchase[3] || '',
-      amount: Number(purchase[4])
-    };
   }
 
   function addTask(title) {
@@ -182,7 +265,6 @@
   function addShopping(item) {
     data.shopping.unshift({ id: uid(), item: item, done: false, createdAt: new Date().toISOString() });
     saveData(); render(); toast('Shopping item added');
-    els.quickInput.value = '';
   }
 
   function addPurchase(p, silent) {
@@ -276,6 +358,7 @@
   document.querySelectorAll('.example').forEach(function (button) {
     button.addEventListener('click', function () {
       els.quickInput.value = button.getAttribute('data-value');
+      setLanguageBadge(els.quickInput.value);
       els.quickInput.focus();
     });
   });
@@ -296,24 +379,33 @@
     els.voiceStatus.classList.toggle('voice-active', !!active);
   }
 
+  function isStandalone() {
+    return !!(window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
+  }
+
+  function resetVoiceButton() {
+    isListening = false;
+    els.voiceButton.classList.remove('listening');
+    els.voiceButton.setAttribute('aria-pressed', 'false');
+  }
+
   function setupRecognition() {
     var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setVoiceStatus('Voice recognition is not available in this browser. On iOS 12, use the keyboard microphone for now.', false);
-      return null;
-    }
+    if (!SpeechRecognition) return null;
 
     var r = new SpeechRecognition();
     r.continuous = false;
     r.interimResults = true;
-    r.maxAlternatives = 1;
-    r.lang = els.voiceLang ? els.voiceLang.value : 'en-US';
+    r.maxAlternatives = 3;
+    // No manual language is selected. The browser gets its default locale;
+    // Tandaan classifies the returned transcript afterward.
 
     r.onstart = function () {
       isListening = true;
+      voiceMode = 'browser';
       els.voiceButton.classList.add('listening');
       els.voiceButton.setAttribute('aria-pressed', 'true');
-      setVoiceStatus('Listening… speak naturally.', true);
+      setVoiceStatus('Listening… speak naturally. Language detection is automatic.', true);
     };
 
     r.onresult = function (event) {
@@ -322,6 +414,7 @@
         transcript += event.results[i][0].transcript;
       }
       els.quickInput.value = transcript;
+      setLanguageBadge(transcript);
       if (event.results[event.results.length - 1].isFinal) {
         setVoiceStatus('Heard: ' + transcript, false);
         parseAndAdd(transcript);
@@ -331,48 +424,71 @@
     };
 
     r.onerror = function (event) {
-      isListening = false;
-      els.voiceButton.classList.remove('listening');
-      els.voiceButton.setAttribute('aria-pressed', 'false');
-      var msg = event.error === 'not-allowed' ? 'Microphone permission was denied.' : 'Voice recognition stopped: ' + event.error + '.';
-      setVoiceStatus(msg, false);
+      resetVoiceButton();
+      if (event.error === 'service-not-allowed') {
+        voiceMode = 'fallback';
+        setVoiceStatus('Safari voice service is unavailable here. Tap the text box and use the iPhone keyboard microphone; Tandaan will still detect the language automatically.', false);
+        els.quickInput.focus();
+        return;
+      }
+      if (event.error === 'not-allowed') {
+        setVoiceStatus('Microphone or speech permission was denied. Check Settings, then try again.', false);
+        return;
+      }
+      setVoiceStatus('Voice recognition stopped: ' + event.error + '.', false);
     };
 
     r.onend = function () {
-      isListening = false;
-      els.voiceButton.classList.remove('listening');
-      els.voiceButton.setAttribute('aria-pressed', 'false');
-      if (els.voiceStatus.textContent === 'Listening… speak naturally.') setVoiceStatus('Ready.', false);
+      resetVoiceButton();
+      if (els.voiceStatus.textContent.indexOf('Listening…') === 0) setVoiceStatus('Ready.', false);
     };
 
     return r;
   }
 
-  els.voiceLang.addEventListener('change', function () {
-    if (recognition) recognition.lang = els.voiceLang.value;
-    setVoiceStatus('Voice language set to ' + els.voiceLang.options[els.voiceLang.selectedIndex].text + '.', false);
-  });
-
   els.voiceButton.addEventListener('click', function () {
-    if (!recognition) {
-      setVoiceStatus('This iPhone browser does not expose speech recognition. Tap the text box and use the iPhone keyboard microphone.', false);
-      els.quickInput.focus();
-      toast('Use the iPhone keyboard microphone for now');
-      return;
-    }
-    if (isListening) {
+    if (isListening && recognition) {
       recognition.stop();
       return;
     }
-    recognition.lang = els.voiceLang.value;
+
+    if (isStandalone()) {
+      // Home Screen PWA speech recognition is still not consistently available on iOS.
+      // Give the user the most reliable path on the same screen.
+      voiceMode = 'fallback';
+      els.quickInput.focus();
+      setVoiceStatus('For Home Screen mode, use the iPhone keyboard microphone. Speak normally; Tandaan will detect the language automatically.', false);
+      toast('Use the iPhone keyboard microphone');
+      return;
+    }
+
+    if (!recognition) {
+      els.quickInput.focus();
+      setVoiceStatus('Use the iPhone keyboard microphone to dictate. Tandaan will detect the language automatically.', false);
+      toast('Use the iPhone keyboard microphone');
+      return;
+    }
+
     try {
       recognition.start();
     } catch (e) {
-      setVoiceStatus('Voice could not start. Tap again and allow microphone access.', false);
+      resetVoiceButton();
+      els.quickInput.focus();
+      setVoiceStatus('Voice could not start. Use the keyboard microphone instead.', false);
     }
   });
 
+  function toast(message) {
+    els.toast.textContent = message;
+    els.toast.classList.add('show');
+    window.clearTimeout(toast._timer);
+    toast._timer = window.setTimeout(function () { els.toast.classList.remove('show'); }, 2200);
+  }
+
   recognition = setupRecognition();
+  if (!recognition && !isStandalone()) {
+    setVoiceStatus('Use the iPhone keyboard microphone to dictate. Tandaan will detect the language automatically.', false);
+  }
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {

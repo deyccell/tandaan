@@ -1,4 +1,4 @@
-const CACHE = 'tandaan-v3';
+const CACHE = 'tandaan-v4';
 const ASSETS = [
   './',
   './index.html',
