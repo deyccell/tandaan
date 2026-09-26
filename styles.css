@@ -82,7 +82,8 @@ input:focus { border-color: var(--accent); }
 .item-main { flex: 1; min-width: 0; }
 .item-title { font-size: 15px; word-break: break-word; }
 .item-meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
-.delete-btn { background: transparent; border: 0; color: var(--muted); padding: 8px; }
+.delete-btn, .edit-btn, .calendar-btn { background: transparent; border: 0; color: var(--muted); padding: 8px; min-width: 38px; border-radius: 10px; }
+.edit-btn:hover, .calendar-btn:hover, .delete-btn:hover { background: var(--panel-2); color: var(--text); }
 .item-done .item-title { text-decoration: line-through; opacity: .55; }
 .price { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .examples { display: grid; gap: 8px; margin-top: 12px; }
@@ -128,3 +129,22 @@ input:focus { border-color: var(--accent); }
 .transcript-actions { display: flex; gap: 8px; margin-top: 10px; }
 .transcript-use { min-height: 42px; padding: 0 14px; flex: 1; }
 .transcript-dismiss { width: 42px; height: 42px; }
+
+.details-toggle { margin-top: 10px; background: transparent; border: 0; color: var(--accent); padding: 6px 2px; font-size: 13px; font-weight: 700; }
+.task-details, .task-details-inner { margin-top: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-2); }
+.details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.details-grid label, .modal-card form > label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
+.details-grid input, .modal-card input { width: 100%; }
+.modal { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 18px; }
+.modal[hidden] { display: none; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.62); }
+.modal-card { position: relative; width: min(560px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.38); }
+.modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.modal-card form { display: grid; gap: 12px; }
+.modal-actions { display: flex; gap: 8px; margin-top: 4px; }
+.modal-save { min-height: 44px; flex: 1; padding: 0 14px; }
+.modal-actions .secondary-btn { flex: 0 0 auto; padding: 0 14px; }
+.item-actions { display: flex; align-items: center; }
+.item-due { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.item-overdue { color: var(--danger); }
+@media (max-width: 480px) { .details-grid { grid-template-columns: 1fr; } .modal { padding: 10px; } }

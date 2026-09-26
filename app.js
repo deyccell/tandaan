@@ -26,7 +26,27 @@
     clearAll: document.getElementById('clearAll'),
     toast: document.getElementById('toast'),
     installHint: document.getElementById('installHint'),
-    voiceFocusBadge: document.getElementById('voiceFocusBadge')
+    voiceFocusBadge: document.getElementById('voiceFocusBadge'),
+    taskDetailsToggle: document.getElementById('taskDetailsToggle'),
+    taskDetails: document.getElementById('taskDetails'),
+    quickDueDate: document.getElementById('quickDueDate'),
+    quickDueTime: document.getElementById('quickDueTime'),
+    editorModal: document.getElementById('editorModal'),
+    editorTitle: document.getElementById('editorTitle'),
+    editorForm: document.getElementById('editorForm'),
+    editId: document.getElementById('editId'),
+    editType: document.getElementById('editType'),
+    editTitle: document.getElementById('editTitle'),
+    editTitleLabel: document.getElementById('editTitleLabel'),
+    editPurchaseFields: document.getElementById('editPurchaseFields'),
+    editQuantity: document.getElementById('editQuantity'),
+    editUnit: document.getElementById('editUnit'),
+    editAmount: document.getElementById('editAmount'),
+    editTaskFields: document.getElementById('editTaskFields'),
+    editDueDate: document.getElementById('editDueDate'),
+    editDueTime: document.getElementById('editDueTime'),
+    closeEditorButton: document.getElementById('closeEditorButton'),
+    cancelEditButton: document.getElementById('cancelEditButton')
   };
 
   function defaultData() {
@@ -34,12 +54,16 @@
   }
 
   function normalizeData(parsed) {
-    return {
-      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
-      shopping: Array.isArray(parsed.shopping) ? parsed.shopping : [],
-      purchases: Array.isArray(parsed.purchases) ? parsed.purchases : [],
-      notes: Array.isArray(parsed.notes) ? parsed.notes : []
-    };
+    var tasks = Array.isArray(parsed.tasks) ? parsed.tasks.map(function (t) {
+      return { id: t.id || uid(), title: String(t.title || ''), done: !!t.done, createdAt: t.createdAt || new Date().toISOString(), updatedAt: t.updatedAt || '', dueDate: t.dueDate || '', dueTime: t.dueTime || '' };
+    }) : [];
+    var shopping = Array.isArray(parsed.shopping) ? parsed.shopping.map(function (s) {
+      return { id: s.id || uid(), item: String(s.item || ''), done: !!s.done, createdAt: s.createdAt || new Date().toISOString(), updatedAt: s.updatedAt || '' };
+    }) : [];
+    var purchases = Array.isArray(parsed.purchases) ? parsed.purchases.map(function (p) {
+      return { id: p.id || uid(), item: String(p.item || ''), quantity: Number(p.quantity || 1), unit: String(p.unit || ''), amount: Number(p.amount || 0), createdAt: p.createdAt || new Date().toISOString(), updatedAt: p.updatedAt || '' };
+    }) : [];
+    return { tasks: tasks, shopping: shopping, purchases: purchases, notes: Array.isArray(parsed.notes) ? parsed.notes : [] };
   }
 
   function loadData() {
@@ -322,19 +346,44 @@
     addTask(text);
   }
 
+  function buildTaskFromQuickAdd(title) {
+    return { id: uid(), title: title, done: false, createdAt: new Date().toISOString(), updatedAt: '', dueDate: els.quickDueDate ? els.quickDueDate.value : '', dueTime: els.quickDueTime ? els.quickDueTime.value : '' };
+  }
+
+  function formatDue(task) {
+    if (!task || !task.dueDate) return '';
+    var value = task.dueDate + (task.dueTime ? 'T' + task.dueTime : 'T23:59');
+    var d = new Date(value);
+    if (isNaN(d.getTime())) return '';
+    return 'Due ' + d.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric' }) + (task.dueTime ? ' at ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
+  }
+
+  function taskDueTimestamp(task) {
+    if (!task || !task.dueDate) return 0;
+    var d = new Date(task.dueDate + 'T' + (task.dueTime || '23:59'));
+    return d.getTime();
+  }
+
+  function isOverdue(task) {
+    var ts = taskDueTimestamp(task);
+    return !!ts && !task.done && ts < Date.now();
+  }
+
   function addTask(title) {
-    data.tasks.unshift({ id: uid(), title: title, done: false, createdAt: new Date().toISOString() });
+    data.tasks.unshift(buildTaskFromQuickAdd(title));
     saveData(); render(); toast('Task added');
     els.quickInput.value = '';
+    if (els.quickDueDate) els.quickDueDate.value = '';
+    if (els.quickDueTime) els.quickDueTime.value = '';
   }
 
   function addShopping(item) {
-    data.shopping.unshift({ id: uid(), item: item, done: false, createdAt: new Date().toISOString() });
+    data.shopping.unshift({ id: uid(), item: item, done: false, createdAt: new Date().toISOString(), updatedAt: '' });
     saveData(); render(); toast('Shopping item added');
   }
 
   function addPurchase(p, silent) {
-    data.purchases.unshift({ id: uid(), item: p.item, quantity: p.quantity, unit: p.unit || '', amount: p.amount, createdAt: new Date().toISOString() });
+    data.purchases.unshift({ id: uid(), item: p.item, quantity: p.quantity, unit: p.unit || '', amount: p.amount, createdAt: new Date().toISOString(), updatedAt: '' });
     if (!silent) {
       saveData(); render(); toast('Purchase added');
       els.quickInput.value = '';
@@ -351,10 +400,14 @@
     els.taskCount.textContent = String(data.tasks.filter(function (t) { return !t.done; }).length);
     els.emptyTasks.style.display = data.tasks.length ? 'none' : 'block';
     els.taskList.innerHTML = data.tasks.map(function (t) {
+      var due = formatDue(t);
+      var overdue = isOverdue(t);
       return '<li class="list-item ' + (t.done ? 'item-done' : '') + '" data-id="' + escapeHTML(t.id) + '">' +
         '<input class="checkbox" type="checkbox" ' + (t.done ? 'checked' : '') + ' aria-label="Complete task">' +
-        '<div class="item-main"><div class="item-title">' + escapeHTML(t.title) + '</div></div>' +
-        '<button class="delete-btn" type="button" aria-label="Delete">✕</button>' +
+        '<div class="item-main"><div class="item-title">' + escapeHTML(t.title) + '</div>' + (due ? '<div class="item-due ' + (overdue ? 'item-overdue' : '') + '">' + escapeHTML(due) + '</div>' : '') + '</div>' +
+        '<div class="item-actions">' + (t.dueDate ? '<button class="calendar-btn" type="button" aria-label="Create calendar reminder" title="Create Calendar reminder">📅</button>' : '') +
+        '<button class="edit-btn" type="button" aria-label="Edit task" title="Edit">✎</button>' +
+        '<button class="delete-btn" type="button" aria-label="Delete task" title="Delete">✕</button></div>' +
       '</li>';
     }).join('');
   }
@@ -366,7 +419,7 @@
       return '<li class="list-item ' + (s.done ? 'item-done' : '') + '" data-id="' + escapeHTML(s.id) + '">' +
         '<input class="checkbox" type="checkbox" ' + (s.done ? 'checked' : '') + ' aria-label="Mark shopping item done">' +
         '<div class="item-main"><div class="item-title">' + escapeHTML(s.item) + '</div></div>' +
-        '<button class="delete-btn" type="button" aria-label="Delete">✕</button>' +
+        '<div class="item-actions"><button class="edit-btn" type="button" aria-label="Edit shopping item" title="Edit">✎</button><button class="delete-btn" type="button" aria-label="Delete shopping item" title="Delete">✕</button></div>' +
       '</li>';
     }).join('');
   }
@@ -380,7 +433,7 @@
       return '<li class="list-item" data-id="' + escapeHTML(p.id) + '">' +
         '<div class="item-main"><div class="item-title">' + escapeHTML(p.item) + '</div><div class="item-meta">' + escapeHTML(meta) + '</div></div>' +
         '<strong class="price">' + peso(p.amount) + '</strong>' +
-        '<button class="delete-btn" type="button" aria-label="Delete">✕</button>' +
+        '<div class="item-actions"><button class="edit-btn" type="button" aria-label="Edit purchase" title="Edit">✎</button><button class="delete-btn" type="button" aria-label="Delete purchase" title="Delete">✕</button></div>' +
       '</li>';
     }).join('');
   }
@@ -390,6 +443,74 @@
     return -1;
   }
 
+  function openEditor(type, item) {
+    els.editType.value = type;
+    els.editId.value = item.id;
+    els.editorTitle.textContent = type === 'task' ? 'Edit task' : (type === 'shopping' ? 'Edit shopping item' : 'Edit purchase');
+    els.editTitleLabel.firstChild.textContent = type === 'task' ? 'Task title' : (type === 'shopping' ? 'Shopping item' : 'Purchase item');
+    els.editTitle.value = type === 'task' ? item.title : item.item;
+    els.editPurchaseFields.hidden = type !== 'purchase';
+    els.editTaskFields.hidden = type !== 'task';
+    if (type === 'purchase') { els.editQuantity.value = item.quantity || 1; els.editUnit.value = item.unit || ''; els.editAmount.value = item.amount || 0; }
+    if (type === 'task') { els.editDueDate.value = item.dueDate || ''; els.editDueTime.value = item.dueTime || ''; }
+    els.editorModal.hidden = false; els.editorModal.setAttribute('aria-hidden', 'false');
+    setTimeout(function () { els.editTitle.focus(); }, 0);
+  }
+
+  function closeEditor() { els.editorModal.hidden = true; els.editorModal.setAttribute('aria-hidden', 'true'); }
+
+  function saveEditor() {
+    var type = els.editType.value, id = els.editId.value;
+    var arr = type === 'task' ? data.tasks : (type === 'shopping' ? data.shopping : data.purchases);
+    var index = findIndexById(arr, id);
+    if (index < 0) return;
+    var now = new Date().toISOString();
+    if (type === 'task') {
+      var title = els.editTitle.value.trim();
+      if (!title) { toast('Task title is required'); return; }
+      arr[index].title = title; arr[index].dueDate = els.editDueDate.value || ''; arr[index].dueTime = els.editDueTime.value || '';
+    } else if (type === 'shopping') {
+      var item = els.editTitle.value.trim();
+      if (!item) { toast('Shopping item is required'); return; }
+      arr[index].item = item;
+    } else {
+      var purchaseItem = els.editTitle.value.trim();
+      if (!purchaseItem) { toast('Purchase item is required'); return; }
+      arr[index].item = purchaseItem; arr[index].quantity = Number(els.editQuantity.value || 1); arr[index].unit = els.editUnit.value.trim(); arr[index].amount = Number(els.editAmount.value || 0);
+    }
+    arr[index].updatedAt = now; saveData(); render(); closeEditor(); toast('Changes saved');
+  }
+
+  function deleteWithConfirm(arr, id, label) {
+    var index = findIndexById(arr, id); if (index < 0) return;
+    if (!window.confirm('Delete this ' + label + '?')) return;
+    arr.splice(index, 1); saveData(); render(); toast(label.charAt(0).toUpperCase() + label.slice(1) + ' deleted');
+  }
+
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+  function calendarDateTime(task) {
+    if (!task || !task.dueDate) return null;
+    var d = new Date(task.dueDate + 'T' + (task.dueTime || '23:59'));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  function toICSLocal(d) { return d.getFullYear() + pad2(d.getMonth()+1) + pad2(d.getDate()) + 'T' + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds()); }
+  function icsEscape(value) { return String(value).replace(/\\/g, '\\\\').replace(/([;,])/g, '\\$1').replace(/\r?\n/g, '\\n'); }
+  function createCalendarReminder(task) {
+    var start = calendarDateTime(task);
+    if (!start) { toast('Set a due date first'); return; }
+    var end = new Date(start.getTime() + 30 * 60 * 1000);
+    var now = new Date();
+    var lines = [
+      'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Tandaan//Task Reminder//EN','BEGIN:VEVENT',
+      'UID:' + icsEscape(task.id) + '@tandaan.local','DTSTAMP:' + toICSLocal(now),'DTSTART:' + toICSLocal(start),'DTEND:' + toICSLocal(end),
+      'SUMMARY:' + icsEscape(task.title),'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:' + icsEscape('Tandaan reminder: ' + task.title),'TRIGGER:-P1D','END:VALARM','END:VEVENT','END:VCALENDAR'
+    ];
+    var blob = new Blob([lines.join('\r\n') + '\r\n'], {type:'text/calendar;charset=utf-8'});
+    var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = 'Tandaan-reminder.ics'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 3000);
+    toast('Calendar reminder file created — add it to Apple Calendar');
+  }
+
   els.addButton.addEventListener('click', function () { parseAndAdd(els.quickInput.value); });
   els.quickInput.addEventListener('keydown', function (event) {
     if (event.key === 'Enter') parseAndAdd(els.quickInput.value);
@@ -397,29 +518,42 @@
 
   els.taskList.addEventListener('change', function (event) {
     if (!event.target.classList.contains('checkbox')) return;
-    var li = event.target.closest('.list-item');
-    var index = findIndexById(data.tasks, li.getAttribute('data-id'));
-    if (index >= 0) { data.tasks[index].done = event.target.checked; saveData(); render(); }
+    var li = event.target.closest('.list-item'); var index = findIndexById(data.tasks, li.getAttribute('data-id'));
+    if (index >= 0) { data.tasks[index].done = event.target.checked; data.tasks[index].updatedAt = new Date().toISOString(); saveData(); render(); }
   });
-
   els.shoppingList.addEventListener('change', function (event) {
     if (!event.target.classList.contains('checkbox')) return;
-    var li = event.target.closest('.list-item');
-    var index = findIndexById(data.shopping, li.getAttribute('data-id'));
-    if (index >= 0) { data.shopping[index].done = event.target.checked; saveData(); render(); }
+    var li = event.target.closest('.list-item'); var index = findIndexById(data.shopping, li.getAttribute('data-id'));
+    if (index >= 0) { data.shopping[index].done = event.target.checked; data.shopping[index].updatedAt = new Date().toISOString(); saveData(); render(); }
+  });
+  els.taskList.addEventListener('click', function (event) {
+    var li = event.target.closest('.list-item'); if (!li) return; var id = li.getAttribute('data-id'); var index = findIndexById(data.tasks, id); if (index < 0) return;
+    if (event.target.classList.contains('edit-btn')) openEditor('task', data.tasks[index]);
+    if (event.target.classList.contains('delete-btn')) deleteWithConfirm(data.tasks, id, 'task');
+    if (event.target.classList.contains('calendar-btn')) createCalendarReminder(data.tasks[index]);
+  });
+  els.shoppingList.addEventListener('click', function (event) {
+    var li = event.target.closest('.list-item'); if (!li) return; var id = li.getAttribute('data-id'); var index = findIndexById(data.shopping, id); if (index < 0) return;
+    if (event.target.classList.contains('edit-btn')) openEditor('shopping', data.shopping[index]);
+    if (event.target.classList.contains('delete-btn')) deleteWithConfirm(data.shopping, id, 'shopping item');
+  });
+  els.purchaseList.addEventListener('click', function (event) {
+    var li = event.target.closest('.list-item'); if (!li) return; var id = li.getAttribute('data-id'); var index = findIndexById(data.purchases, id); if (index < 0) return;
+    if (event.target.classList.contains('edit-btn')) openEditor('purchase', data.purchases[index]);
+    if (event.target.classList.contains('delete-btn')) deleteWithConfirm(data.purchases, id, 'purchase');
   });
 
-  function deleteFrom(container, arr, label) {
-    container.addEventListener('click', function (event) {
-      if (!event.target.classList.contains('delete-btn')) return;
-      var li = event.target.closest('.list-item');
-      var index = findIndexById(arr, li.getAttribute('data-id'));
-      if (index >= 0) { arr.splice(index, 1); saveData(); render(); toast(label + ' deleted'); }
+  if (els.taskDetailsToggle) {
+    els.taskDetailsToggle.addEventListener('click', function () {
+      var opening = els.taskDetails.hidden; els.taskDetails.hidden = !opening; els.taskDetailsToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
+      els.taskDetailsToggle.textContent = opening ? '− Hide task due date & time' : '＋ Task due date & time (optional)';
     });
   }
-  deleteFrom(els.taskList, data.tasks, 'Task');
-  deleteFrom(els.shoppingList, data.shopping, 'Shopping item');
-  deleteFrom(els.purchaseList, data.purchases, 'Purchase');
+  els.editorForm.addEventListener('submit', function (event) { event.preventDefault(); saveEditor(); });
+  els.closeEditorButton.addEventListener('click', closeEditor);
+  els.cancelEditButton.addEventListener('click', closeEditor);
+  els.editorModal.addEventListener('click', function (event) { if (event.target.getAttribute('data-close-editor') === 'true') closeEditor(); });
+  document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && !els.editorModal.hidden) closeEditor(); });
 
   document.querySelectorAll('.example').forEach(function (button) {
     button.addEventListener('click', function () {
@@ -427,6 +561,18 @@
       els.quickInput.focus();
     });
   });
+
+  function checkLocalReminders() {
+    var now = Date.now();
+    var dueSoon = data.tasks.filter(function (task) {
+      if (task.done || !task.dueDate) return false;
+      var ts = taskDueTimestamp(task); return ts && ts > now && ts - now <= 24 * 60 * 60 * 1000;
+    });
+    if (dueSoon.length) {
+      setTimeout(function () { toast('Upcoming: ' + dueSoon[0].title + (dueSoon.length > 1 ? ' +' + (dueSoon.length - 1) + ' more' : '')); }, 500);
+    }
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { render(); checkLocalReminders(); } });
 
   els.clearAll.addEventListener('click', function () {
     if (!window.confirm('Clear all local data on this device?')) return;
@@ -855,4 +1001,5 @@
   }
 
   render();
+  checkLocalReminders();
 })();

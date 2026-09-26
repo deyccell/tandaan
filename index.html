@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Tandaan">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=11">
+  <link rel="stylesheet" href="styles.css?v=12">
   <title>Tandaan</title>
 </head>
 <body>
@@ -40,6 +40,14 @@
       <div class="input-row">
         <input id="quickInput" type="text" autocomplete="off" placeholder="Try: Mabakal bugas" enterkeyhint="done">
         <button id="addButton" class="primary-btn" type="button">Add</button>
+      </div>
+      <button id="taskDetailsToggle" class="details-toggle" type="button" aria-expanded="false">＋ Task due date &amp; time (optional)</button>
+      <div id="taskDetails" class="task-details" hidden>
+        <div class="details-grid">
+          <label>Due date<input id="quickDueDate" type="date"></label>
+          <label>Due time<input id="quickDueTime" type="time"></label>
+        </div>
+        <p class="hint">These fields apply when Quick Add creates a task. You can edit them later.</p>
       </div>
 
       <div class="voice-row">
@@ -119,7 +127,43 @@
     <button id="clearAll" class="danger-btn" type="button">Clear all local data</button>
   </main>
 
+  <div id="editorModal" class="modal" hidden aria-hidden="true">
+    <div class="modal-backdrop" data-close-editor="true"></div>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="editorTitle">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow">EDIT ITEM</div>
+          <h2 id="editorTitle">Edit</h2>
+        </div>
+        <button id="closeEditorButton" class="ghost-btn" type="button" aria-label="Close editor">✕</button>
+      </div>
+      <form id="editorForm">
+        <input id="editId" type="hidden">
+        <input id="editType" type="hidden">
+        <label id="editTitleLabel">Title
+          <input id="editTitle" type="text" autocomplete="off">
+        </label>
+        <div id="editPurchaseFields" class="details-grid" hidden>
+          <label>Quantity<input id="editQuantity" type="number" min="0.01" step="0.01"></label>
+          <label>Unit<input id="editUnit" type="text" placeholder="kg, tray, pcs"></label>
+          <label>Price (₱)<input id="editAmount" type="number" min="0" step="0.01"></label>
+        </div>
+        <div id="editTaskFields" class="task-details-inner" hidden>
+          <div class="details-grid">
+            <label>Due date<input id="editDueDate" type="date"></label>
+            <label>Due time<input id="editDueTime" type="time"></label>
+          </div>
+          <p class="hint">Tandaan stores the due date/time locally. For a reliable phone alarm even when Tandaan is closed, add the task to Apple Calendar using the 📅 button after saving.</p>
+        </div>
+        <div class="modal-actions">
+          <button id="saveEditButton" class="primary-btn modal-save" type="submit">Save changes</button>
+          <button id="cancelEditButton" class="secondary-btn" type="button">Cancel</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=11"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>
